@@ -4,10 +4,12 @@ import pandas as pd
 import gzip
 import io
 import redis
+import redis.client
 import redis.exceptions
 import argparse
 import pickle
-
+from typing import Optional, Any, Union
+from dataclasses import dataclass
 
 ## CONNECT TO REDIS
 if __name__ == '__main__':
@@ -73,6 +75,8 @@ def download_biomart_tables():
         
         secondary_tables = []
         for i, atts in enumerate(secondary_tables_atts, start=1):
+            if species == 'rat' and i == 2:
+                continue
             biomart_table = f'BIOMART_{i}_{species}.tsv'
             secondary_tables.append(biomart_table)
             print("Downloading secondary table %d from Biomart..." % i)
@@ -160,7 +164,12 @@ def download_uniprot_table():
 #         red.hset(key, subkey, val)
 
 
+null: Any = None # Lets be as un-Pythonic as possible to keep the neovim type linter happy 
+
+
 class EntityObj:
+    acc: Any
+
     def pkl(self):
         return pickle.dumps(self)
 
@@ -168,96 +177,205 @@ class EntityObj:
     def unpkl(cls, pickled):
         return pickle.loads(pickled)
 
+    def update(self, field, thing):
+        if pd.isnull(thing):
+            return
+        # assert(hasattr(self, field)), (self, field, thing)
+        if hasattr(self, field):
+            ptr = self
+        elif hasattr(self.acc, field):
+            ptr = self.acc
+        else:
+            raise AttributeError(f"Object {self} has no attribute {field}")
+
+        pre = getattr(ptr, field) 
+        if pre == null:
+            setattr(ptr, field, thing)
+        elif isinstance(pre, set):
+            setattr(ptr, field, pre | {thing})
+        else:
+            setattr(ptr, field, set([pre, thing]))
+
+@dataclass
+class GeneAtts:
+    uniprot_kb_gene: Optional[str] = null 
+    ensembl_gene: Optional[str] = null
+    geneid: Optional[str] = null
+    hgnc_id: Optional[str] = null
+    hgnc_symbol: Optional[str] = null
+
+@dataclass
+class IsoformAtts:
+    ensembl_trans: Optional[str] = null
+    refseq_mrna: Optional[str] = null
+
+@dataclass
+class ProteinAtts:
+    ensembl_prot: Optional[str] = null
+    uniprot_swissprot: Optional[str] = null
+    uniprot_trembl: Optional[str] = null
+
+@dataclass
+class ProteoformAtts:
+    uniprot_isoform: Optional[str] = null
+    refseq_prot: Optional[str] = null
 
 class Gene(EntityObj):
     def __init__(self, identifier):
         self.identifier = identifier
-        self.uniprot_kb_gene = None
-        self.ensembl_gene = None
-        self.geneid = None
-        self.hgnc_id = None
-        self.hgnc_symbol = None
-
-        self.transcripts = []
-
-class Transcript(EntityObj):
-    def __init__(self, identifier):
-        self.identifier = identifier
-        self.ensembl_trans = None
-        self.refseq_mrna = None
-   
-        self.parent_gene = None
-        self.isoforms = []
+        self.acc = GeneAtts()
+        self.transcripts = set() 
 
 class Isoform(EntityObj):
     def __init__(self, identifier):
         self.identifier = identifier
-        self.refseq_mrna = None
+        self.acc = IsoformAtts()
 
-        self.parent_gene = None
-        self.parent_transcript = None
-        self.protein = None
+        self.parent_gene = null
+        self.proteins = set() 
 
 class Protein(EntityObj):
     def __init__(self, identifier):
         self.identifier = identifier
-        self.ensembl_prot = None
-        self.trembl_prot = None
-        self.refseq_prot = None
-        self.uniprot_swissprot = None
-        self.uniprot_trembl = None
-        self.uniprot_isoform = None
+        self.acc = ProteinAtts()
 
-        self.gene = None
-        self.parent_transcript = None
-        self.parent_isoform = None
-        self.proteoforms = []
+        self.parent_gene = null
+        self.parent_isoform = null
+        self.proteoforms = set() 
 
 class Proteoform(EntityObj):
     def __init__(self, identifier):
         self.identifier = identifier
-        self.uniprot_isoform = None
-        self.ensembl_prot = None
-        self.refseq_prot = None
+        self.acc = ProteoformAtts()
 
-        self.parent_gene = None
-        self.parent_transcript = None
-        self.parent_isoform = None
-        self.parent_protein = None
+        self.parent_gene = null
+        self.parent_isoform = null
+        self.parent_protein = null
 
-# TODO determine which of these values actually fits where- what level do given accessions refer to?
 
-# def load_biomart_tables_into_redis(biomart_tables, red):
+class ObjectyRedis(redis.Redis):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def oget(self, key):
+        obj = self.get(key)
+        if obj is None:
+            return None 
+        return pickle.loads(obj) # type: ignore
+
+    def oset(self, key, obj):
+        self.set(key, pickle.dumps(obj))
+
+    def register_identifiers(self, obj):
+        for key, val in obj.acc.__dict__.items():
+            if key != 'identifier' and 'parent' not in key and val is not null and isinstance(val, str):
+                keystr = 'KEY:' + val
+                if self.exists(keystr):
+                    pre = self.oget(keystr)
+                    if pre == obj.identifier or (isinstance(pre, set) and obj.identifier in pre):
+                        continue
+                    else:
+                        print(f"Overloaded identifier: {keystr} ({pre}, {obj.identifier})")
+                        if isinstance(pre, set):
+                            self.oset(keystr, pre | {obj.identifier})
+                        else:
+                            self.oset(keystr, set([pre, obj.identifier]))
+                else:
+                    self.oset(keystr, obj.identifier)
+        
+        self.oset(obj.identifier, obj)
+
+    # def pipeline(self, *args, **kwargs):
+    #     return ObjectyPipeline(self.connection_pool, *args, **kwargs)
+
+# class ObjectyPipeline(redis.client.Pipeline):
+#     def __init__(self, *args, **kwargs):
+#         super().__init__(*args, **kwargs)
+
+
+
+
+
+def load_biomart_tables_into_redis(biomart_tables, red):
     for biomart_table in biomart_tables:
         print(f"Loading {biomart_table} into Redis")
         table = pd.read_csv(biomart_table, sep='\t')
-        for _, row in table.iterrows():
+        # pipe = red.pipeline(transaction=False)
+        for ind, row in table.iterrows():
             assert(row['Gene stable ID'].startswith('ENS'))  # type: ignore
-            gene_entry = 'OBJ:GENE:' + row['Gene stable ID']
-            trans_entry = 'OBJ:TRANS:' + row['Transcript stable ID']
-            prot_entry = 'OBJ:PROT:' + row['Protein stable ID']
+            # if row['UniProtKB Gene Name symbol'].lower().startswith('mt'):
+            #     print(row['UniProtKB Gene Name symbol'])
+            #     continue
 
-            set_obj(red, gene_entry, {'uniprot_kb_gene': row['UniProtKB Gene Name symbol'],
-                                      'emsembl_gene': row['Gene stable ID'],})
-            set_obj(red, trans_entry, {'ensembl_trans': row['Transcript stable ID']})
-            set_obj(red, prot_entry, {'ensembl_prot': row['Protein stable ID'],
-                                      'trembl_prot': row['UniProtKB/TrEMBL ID']})
+            gene_entry = 'OBJ:GENE:' + row['Gene stable ID']
+            trans_entry = 'OBJ:GENE:' + row['Transcript stable ID']
+            prot_entry = 'OBJ:PROT:' + row['Protein stable ID']
+            
+            gene = Gene(gene_entry) if not red.exists(gene_entry) else red.oget(gene_entry)
+            gene.transcripts.add(trans_entry)
+            gene.update('uniprot_kb_gene', row['UniProtKB Gene Name ID'])
+            gene.update('ensembl_gene', row['Gene stable ID'])
+            gene.update('geneid', row['NCBI gene (formerly Entrezgene) ID'])
+            gene.update('hgnc_id', row['HGNC ID'])
+            gene.update('hgnc_symbol', row['HGNC symbol'])
+
+            trans = red.oget(trans_entry) if red.exists(trans_entry) else Isoform(trans_entry)
+            trans.update('parent_gene', gene_entry)
+            trans.proteins.add(prot_entry)
+            trans.update('ensembl_trans', row['Transcript stable ID']) 
+            trans.update('refseq_mrna', row['RefSeq mRNA ID'])
+
+            prot = red.oget(prot_entry) if red.exists(prot_entry) else Protein(prot_entry)
+            prot.update('parent_gene', gene_entry)
+            prot.update('parent_isoform', trans_entry)
+            prot.update('uniprot_swissprot', row['UniProtKB/Swiss-Prot ID'])
+            prot.update('uniprot_trembl', row['UniProtKB/TrEMBL ID'])
+            prot.update('ensembl_prot', row['Protein stable ID'])
+
+            if pd.notnull(row['RefSeq peptide ID']):  # type: ignore
+                proteo_entry = 'OBJ:PROTEO:' + row['RefSeq peptide ID']
+                proteo = red.oget(proteo_entry) if red.exists(proteo_entry) else Proteoform(proteo_entry)
+                proteo.update('parent_gene', gene_entry)
+                proteo.update('parent_isoform', trans_entry)
+                proteo.update('parent_protein', prot_entry)
+                # proteo.update('ensembl_prot', row['Protein stable ID'])
+                # We don't get uniprot isoforms from biomart!
+                proteo.update('refseq_prot', row['RefSeq peptide ID'])
+
+                red.register_identifiers(proteo)
+
+            red.register_identifiers(gene)
+            red.register_identifiers(trans)
+            red.register_identifiers(prot)
+
+            if int(ind) % 1000 == 0:  # type: ignore
+                print('.', sep='', end='', flush=True)
+ 
+        # del table
+        # results = pipe.execute()
+        # assert(all([x is None for x in results]))
+        print(f"Loaded {biomart_table} into Redis")
+        raise Exception
+
+
     
 
 
 if __name__ == '__main__':
-    # try:
-    #     red = redis.Redis(host=host, port=port, db=db)
-    #     red.ping()
-    # except redis.exceptions.ConnectionError as e:
-    #     print("Error on attempting to connect to Redis. Please make sure that Redis is running.")
-    #     raise e
+    try:
+        red = ObjectyRedis(host=HOST, port=PORT, db=DB)
+        red.ping()
+    except redis.exceptions.ConnectionError as e:
+        print("Error on attempting to connect to Redis. Please make sure that Redis is running.")
+        raise e
+
+    red.flushdb()
 
     # uniprot_table = download_uniprot_table()
-    biomart_tables = download_biomart_tables()
+    # biomart_tables = download_biomart_tables()
 
-    load_biomart_tables_into_redis(biomart_tables)
-    load_uniprot_into_redis(uniprot_table)
+    load_biomart_tables_into_redis(['/home/max/biostuff/accessive/BIOMART_mouse_FULL.tsv'], red)
+    # load_uniprot_into_redis(uniprot_table)
     
     raise Exception()
 
