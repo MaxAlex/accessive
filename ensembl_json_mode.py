@@ -1,6 +1,6 @@
 import json
 import sqlite3
-
+import pandas as pd
 
 
 
@@ -13,8 +13,12 @@ GENE_COLUMNS = ['ensembl_gene', 'arrayexpress', 'biogrid', 'ens_lrg_gene', 'entr
 ISOFORM_COLUMNS = ['ensembl_mrna', 'ccds', 'ens_lrg_transcript', 'refseq_mrna', 'refseq_ncrna', 'ucsc', 'isoform_biotype',
                    'parent_gene', 'proteoform_list']
 # PROTEIN_COLUMNS = ['uniprot_swissprot', 'pdb', 'parent_gene', 'parent_isoform', 'proteoform_list']
-PROTEOFORM_COLUMNS = ['ensembl_prot', 'uniparc', 'alphafold', 'uniprot_swissprot', 'uniprot_isoform', 'refseq_peptide', 'embl', 'pdb',
+PROTEOFORM_COLUMNS = ['ensembl_prot', 'uniparc', 'alphafold', 'uniprot_swissprot', 'uniprot_trembl', 'uniprot_isoform', 'refseq_peptide', 'embl', 'pdb',
                       'parent_gene', 'parent_isoform']
+
+AMBIGUOUS_IDENTIFIERS = ((set(GENE_COLUMNS) & set(ISOFORM_COLUMNS) | set(GENE_COLUMNS) & set(PROTEOFORM_COLUMNS) | set(ISOFORM_COLUMNS) & set(PROTEOFORM_COLUMNS)) 
+                         - set(['parent_gene', 'protoeform_list']))
+assert(len(AMBIGUOUS_IDENTIFIERS) == 0), AMBIGUOUS_IDENTIFIERS
 # Protein and proteoform levels aren't represented directly in the JSON strucutre; each gene has a list of transcripts, each with
 # precisely one translation listed. However, multiple transcripts can be the same protein, as going by uniprot_swissprot accession. (How? Why??)
 # Group transcripts/translations by swissprot identifier to get the set of "protein", and then take each translation as a separate "proteoform."
@@ -69,21 +73,20 @@ def load_ensembl_jsonfile(json_file, db_file = 'accessive_sqlite.db'):
     conn = sqlite3.connect(db_file) 
     c = conn.cursor()
 
-    # Initialize tables if they don't already exist
-    # table_names = ['species', 'genes', 'isoforms', 'proteins', 'proteoforms']
     c.execute('CREATE TABLE IF NOT EXISTS species (' + ','.join(SPECIES_COLUMNS) + ')')
     c.execute('CREATE TABLE IF NOT EXISTS identifiers (' + ','.join(IDENTIFIER_COLUMNS) + ')')
     c.execute('CREATE TABLE IF NOT EXISTS genes (' + ','.join(GENE_COLUMNS) + ')')
     c.execute('CREATE TABLE IF NOT EXISTS isoforms (' + ','.join(ISOFORM_COLUMNS) + ')')
-    # c.execute('CREATE TABLE IF NOT EXISTS proteins (' + ','.join(PROTEIN_COLUMNS) + ')')
     c.execute('CREATE TABLE IF NOT EXISTS proteoforms (' + ','.join(PROTEOFORM_COLUMNS) + ')')
+    c.execute('CREATE TABLE IF NOT EXISTS gene_to_isoforms (ensembl_gene, ensembl_mrna)')
+    c.execute('CREATE TABLE IF NOT EXISTS isoform_to_proteoforms (ensembl_mrna, ensembl_prot)')
+    c.execute('CREATE TABLE IF NOT EXISTS gene_to_proteoforms (ensembl_gene, ensembl_prot)')
 
     print('Current size:')
     print(c.execute('SELECT COUNT(*) FROM species').fetchall())
     print(c.execute('SELECT COUNT(*) FROM identifiers').fetchall())
     print(c.execute('SELECT COUNT(*) FROM genes').fetchall())
     print(c.execute('SELECT COUNT(*) FROM isoforms').fetchall())
-    # print(c.execute('SELECT COUNT(*) FROM proteins').fetchall())
     print(c.execute('SELECT COUNT(*) FROM proteoforms').fetchall())
 
     # Check if species already exists
@@ -115,16 +118,14 @@ def load_ensembl_jsonfile(json_file, db_file = 'accessive_sqlite.db'):
         child_isoforms = _build_list([x['id'] for x in gene.get('transcripts', [])])
         child_proteins = _build_list([x['translations'][0]['id'] for x in gene.get('transcripts', []) if x.get('translations', [])])
 
-        # c.execute(f"INSERT OR IGNORE INTO genes VALUES ('{gene_arrayexpress}', '{gene_biogrid}', '{gene_ens_lrg_gene}', '{gene_ensembl}', '{gene_entrez}', '{gene_genecards}', '{gene_hgnc}', '{gene_mim_gene}', '{gene_pfam}', '{gene_uniprot_gene}', '{gene_wikigene}', '{child_isoforms}', '{child_proteins}')")
         c.execute(f"INSERT OR IGNORE INTO genes VALUES (" + ', '.join(['?' for _ in GENE_COLUMNS]) + ')', 
                   (gene_ensembl, gene_arrayexpress, gene_biogrid, gene_ens_lrg_gene, gene_entrez, gene_genecards, gene_hgnc, gene_mim_gene,
                    gene_pfam, gene_uniprot_gene, gene_wikigene, child_isoforms, child_proteins))
 
-        gene_acc_types = [(gene_ensembl, 'ensembl_gene'), (gene_entrez, 'entrez_gene'), (gene_hgnc, 'hgnc'), (gene_uniprot_gene, 'uniprot_kb'),
+        gene_acc_types = [(gene_ensembl, 'ensembl_gene'), (gene_entrez, 'entrez_gene'), (gene_hgnc, 'hgnc'), (gene_uniprot_gene, 'uniprot_gene'),
                           (gene_arrayexpress, 'arrayexpress'), (gene_biogrid, 'biogrid'), (gene_ens_lrg_gene, 'ens_lrg_gene'),
                           (gene_genecards, 'genecards'), (gene_mim_gene, 'mim_gene'), (gene_pfam, 'pfam'), (gene_wikigene, 'wikigene')]
         for acc, acc_type in gene_acc_types:
-            # c.execute(f"INSERT OR IGNORE INTO identifiers VALUES ('{acc}', '{acc_type}', '{gene_ensembl}', 'ensembl_gene')")
             c.execute(f"INSERT OR IGNORE INTO identifiers VALUES (" + ', '.join(['?' for _ in IDENTIFIER_COLUMNS]) + ')', 
                       (acc, acc_type, gene_ensembl, 'ensembl_gene'))
 
@@ -141,14 +142,12 @@ def load_ensembl_jsonfile(json_file, db_file = 'accessive_sqlite.db'):
             child_proteins = _build_list([x['id'] for x in isoform.get('translations', [])])
             parent_gene = gene_ensembl
 
-            # c.execute(f"INSERT OR IGNORE INTO isoforms VALUES ('{iso_ensembl}', '{iso_ccds}', '{iso_ens_lrg_transcript}', '{iso_refseq_mrna}', '{iso_refseq_ncrna}', '{iso_ucsc}', '{iso_biotype}')")
             c.execute(f"INSERT OR IGNORE INTO isoforms VALUES (" + ', '.join(['?' for _ in ISOFORM_COLUMNS]) + ')',
                       (iso_ensembl, iso_ccds, iso_ens_lrg_transcript, iso_refseq_mrna, iso_refseq_ncrna, iso_ucsc, iso_biotype, parent_gene, child_proteins))
 
-            iso_acc_types = [(iso_ensembl, 'ensembl_transcript'), (iso_ccds, 'ccds'), (iso_ens_lrg_transcript, 'ens_lrg_transcript'), (iso_refseq_mrna, 'refseq_mrna'),
+            iso_acc_types = [(iso_ensembl, 'ensembl_mrna'), (iso_ccds, 'ccds'), (iso_ens_lrg_transcript, 'ens_lrg_transcript'), (iso_refseq_mrna, 'refseq_mrna'),
                              (iso_refseq_ncrna, 'refseq_ncrna'), (iso_ucsc, 'ucsc'), (iso_biotype, 'isoform_biotype')]
             for acc, acc_type in iso_acc_types:
-                # c.execute(f"INSERT OR IGNORE INTO identifiers VALUES ('{acc}', '{acc_type}', '{iso_ensembl}', 'ensembl_transcript')")
                 c.execute(f"INSERT OR IGNORE INTO identifiers VALUES (" + ', '.join(['?' for _ in IDENTIFIER_COLUMNS]) + ')',
                           (acc, acc_type, iso_ensembl, 'ensembl_transcript'))
 
@@ -180,19 +179,19 @@ def load_ensembl_jsonfile(json_file, db_file = 'accessive_sqlite.db'):
                 pform_refseq_peptide = _list_item(proteoform, 'RefSeq_peptide')
                 pform_alphafold = _list_item(proteoform, 'alphafold')
                 pform_embl = _list_item(proteoform, 'EMBL')
-                pform_uniprot_swissprot = _list_item(proteoform, 'Uniprot/SWISSPROT')  # TODO TODO should also have Uniprot/SPTREMBL !
+                pform_uniprot_swissprot = _list_item(proteoform, 'Uniprot/SWISSPROT') 
+                pform_uniprot_trembl = _list_item(proteoform, 'Uniprot/SPTREMBL')
                 pform_pdb = _list_item(proteoform, 'PDB')
 
                 parent_gene = gene_ensembl
                 parent_isoform = iso_ensembl
 
-                # c.execute(f"INSERT OR IGNORE INTO proteoforms VALUES ('{pform_ensembl}', '{pform_uniparc}', '{pform_alphafold}', '{pform_uniprot_swissprot}', '{pform_uniprot_isoform}', '{pform_refseq_peptide}', '{pform_embl}', '{pform_pdb}')")
                 c.execute(f"INSERT OR IGNORE INTO proteoforms VALUES (" + ', '.join(['?' for _ in PROTEOFORM_COLUMNS]) + ')',
                           (pform_ensembl, pform_uniparc, pform_alphafold, pform_uniprot_swissprot, pform_uniprot_isoform, pform_refseq_peptide, pform_embl, pform_pdb, parent_gene, parent_isoform))
 
-                pform_acc_types = [(pform_ensembl, 'ensembl_prot'), (pform_uniparc, 'uniparc'), (pform_uniprot_isoform, 'uniprot_isoform'), (pform_refseq_peptide, 'refseq_peptide'), (pform_alphafold, 'alphafold')]
+                pform_acc_types = [(pform_ensembl, 'ensembl_prot'), (pform_uniparc, 'uniparc'), (pform_uniprot_isoform, 'uniprot_isoform'), (pform_uniprot_swissprot, 'uniprot_swissprot'),
+                                   (pform_uniprot_trembl, 'uniprot_trembl'), (pform_refseq_peptide, 'refseq_peptide'), (pform_alphafold, 'alphafold')]
                 for acc, acc_type in pform_acc_types:
-                    # c.execute(f"INSERT OR IGNORE INTO identifiers VALUES ('{acc}', '{acc_type}', '{pform_ensembl}', 'ensembl_prot')")
                     c.execute(f"INSERT OR IGNORE INTO identifiers VALUES (" + ', '.join(['?' for _ in IDENTIFIER_COLUMNS]) + ')',
                               (acc, acc_type, pform_ensembl, 'ensembl_prot'))
 
@@ -200,16 +199,101 @@ def load_ensembl_jsonfile(json_file, db_file = 'accessive_sqlite.db'):
         if row % 1000 == 0:
             conn.commit()
             print(f"Processed {row} genes.")
+
     conn.commit()
     c.execute(f"UPDATE species SET valid = 1 WHERE taxon = '{data['organism']['taxonomy_id']}'")
-    print(f"Done compiling {data['organism']['display_name']} database ({row} genes.)")
+    print(f"Done compiling {data['organism']['display_name']} database ({row} genes.)") # type: ignore
 
 
+
+from collections import defaultdict
+
+class Accessive():
+    def __init__(self, db_file = 'accessive_sqlite.db'):
+        self.conn = sqlite3.connect(db_file)
+        self.c = self.conn.cursor()
+
+    def _identifier_type(self, accs):
+        accs = [accs] if isinstance(accs, str) else accs
+        query = f"SELECT identifier, referent_type FROM identifiers WHERE identifier IN ({','.join(['?']*len(accs))})"
+        self.c.execute(query, accs)
+        return self.c.fetchall()
+
+
+    def __table_join_keys(self, source_table, dest_table):
+        assert(source_table != dest_table)
+        source_table_key = 'proteoform_list' if 'proteoform' in dest_table else 'isoform_list' if 'isoform' in dest_table else 'ensembl_gene'
+        dest_table_key = 'ensembl_prot' if 'proteoform' in dest_table else 'ensembl_mrna' if 'isoform' in dest_table else 'parent_gene' 
+        return source_table_key, dest_table_key
+
+    def _query(self, accs, acc_type, dest_types):
+        source_table, source_table_keys = (('proteoforms', PROTEOFORM_COLUMNS) if acc_type in PROTEOFORM_COLUMNS 
+                                           else ('isoforms', ISOFORM_COLUMNS) if acc_type in ISOFORM_COLUMNS 
+                                           else ('genes', GENE_COLUMNS))
+        dest_keys = defaultdict(list)
+        for dest_type in dest_types:
+            if dest_type in GENE_COLUMNS:
+                dest_keys['genes'].append(dest_type)
+            elif dest_type in ISOFORM_COLUMNS:
+                dest_keys['isoforms'].append(dest_type)
+            elif dest_type in PROTEOFORM_COLUMNS:
+                dest_keys['proteoforms'].append(dest_type)
+            else:
+                raise Exception(f"Identifier type {dest_type} is not recognized.")
+        
+        join_subqueries = []
+        for dest_table, dest_table_keys in dest_keys.items():
+            join_table_key, dest_table_key = self.__table_join_keys(source_table, dest_table)
+            if '_list' in dest_table_key:
+                join_subqueries.append(f"JOIN {dest_table} ON {source_table}.{join_table_key} LIKE '%' || {dest_table}.{dest_table_key} || '%'")
+            join_subqueries.append(f"JOIN {dest_table} ON {source_table}.{join_table_key} = {dest_table}.{dest_table_key}")
+
+
+        join_tables = [(x, self.__table_join_keys(source_table, x)) for x in dest_tables if x != source_table]
+        if len(join_tables)==2:
+            join_table1, join_table2 = join_tables
+            query = f"""
+                SELECT {acc_type},{','.join(dest_types)} FROM {source_table} 
+                    JOIN {join_table1[0]} ON {source_table}.{join_table1[1][0]} = {join_table1[0]}.{join_table1[1][1]} 
+                    JOIN {join_table2[0]} ON {source_table}.{join_table2[1][0]} = {join_table2[0]}.{join_table2[1][1]} 
+                WHERE {source_table}.{acc_type} IN ({','.join(['?']*len(accs))})
+            """
+        elif len(join_tables)==1:
+            join_table = join_tables[0]
+            query = f"SELECT {acc_type},{','.join(dest_types)} FROM {source_table} JOIN {join_table[0]} ON {source_table}.{join_table[1][0]} = {join_table[0]}.{join_table[1][1]} WHERE {source_table}.{acc_type} IN ({','.join(['?']*len(accs))})"
+        else:
+            query = f"SELECT {acc_type},{','.join(dest_types)} FROM {source_table} WHERE {acc_type} IN ({','.join(['?']*len(accs))})"
+    
+        self.c.execute(query, accs)
+        out = pd.DataFrame(self.c.fetchall(), columns=[acc_type]+dest_types)
+        return out
+
+
+    def map_identifiers(self, accs, acc_type = None, destination_types = None):
+        accs = [accs] if isinstance(accs, str) else accs
+        assert(destination_types is None or isinstance(destination_types, list))
+        if not acc_type:
+            acc_types = self._identifier_type(accs)
+            assert(len(set([x[1] for x in acc_types])) == 1), "All source identifiers must be of the same type. (Found " + ', '.join(set([x[1] for x in acc_types])) + ")"
+            acc_type = acc_types[0][1]
+
+        if destination_types is None:
+            if acc_type in GENE_COLUMNS:
+                destination_types = GENE_COLUMNS
+            elif acc_type in ISOFORM_COLUMNS:
+                destination_types = ['ensembl_gene']+ISOFORM_COLUMNS
+            elif acc_type in PROTEOFORM_COLUMNS:
+                destination_types = ['ensembl_gene', 'ensembl_mrna']+PROTEOFORM_COLUMNS
+            else:
+                raise Exception(f"Identifier type {acc_type} is not recognized.")
+    
+        return self._query(accs, acc_type, destination_types)
 
 
 
 if __name__ == '__main__':
-    load_ensembl_jsonfile('/data/biostuff/ensembl_data/homo_sapiens.json')    
+    import sys
+    load_ensembl_jsonfile(sys.argv[1]) 
 
 
 
