@@ -1,8 +1,8 @@
 
 SPECIES_COLUMNS = ['name TEXT UNIQUE', 'display_name TEXT UNIQUE', 'taxon TEXT UNIQUE', 'valid BOOLEAN']
-IDENTIFIER_COLUMNS = ['identifier TEXT PRIMARY KEY', 'identifier_type TEXT', 'referent TEXT', 'referent_type TEXT', 'taxon INTEGER']
+IDENTIFIER_COLUMNS = ['identifier TEXT', 'identifier_type TEXT', 'referent TEXT', 'referent_type TEXT', 'taxon INTEGER']
 
-GENE_COLUMNS = ['ensembl_gene', 'taxon', 'arrayexpress', 'biogrid', 'ens_lrg_gene', 'entrez_gene', 'genecards', 'hgnc', 'mim_gene', 'pfam', 'uniprot_gene', 'wikigene']
+GENE_COLUMNS = ['ensembl_gene', 'taxon', 'gene_description', 'gene_name', 'arrayexpress', 'biogrid', 'ens_lrg_gene', 'entrez_gene', 'genecards', 'hgnc', 'mim_gene', 'pfam', 'uniprot_gene', 'wikigene']
 ISOFORM_COLUMNS = ['ensembl_mrna', 'taxon', 'ccds', 'ens_lrg_transcript', 'refseq_mrna', 'refseq_ncrna', 'ucsc', 'isoform_biotype']
 PROTEOFORM_COLUMNS = ['ensembl_prot', 'taxon', 'uniparc', 'alphafold', 'uniprot_swissprot', 'uniprot_trembl', 'uniprot_isoform', 'refseq_peptide', 'embl', 'pdb']
 
@@ -22,17 +22,8 @@ assert(len(AMBIGUOUS_IDENTIFIERS) == 1), AMBIGUOUS_IDENTIFIERS
 
 
 def column_definitions(columns):
-    return ', '.join([f"{columns[0]} TEXT PRIMARY KEY", f"{columns[1]} INTEGER"] + [f"{x} TEXT[]" for x in columns[1:]])
+    return ', '.join([f"{columns[0]} TEXT PRIMARY KEY", f"{columns[1]} INTEGER"] + [f"{x} TEXT[]" for x in columns[2:]])
 
-
-
-# def build_list(things):
-#     assert(all([isinstance(x, str) for x in things]))  # Else use pickle?
-#     return 'L#|'+'|'.join(things)
-
-# def load_list(thing):
-#     assert(thing[:3]=='L#|')
-#     return thing[3:].split('|')
 
 def single_item(data, key):
     try:

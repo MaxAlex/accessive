@@ -23,13 +23,14 @@ def initialize_tables(postgres_user=None, postgres_password=None):
     c.execute('CREATE TABLE IF NOT EXISTS genes (' + column_definitions(GENE_COLUMNS) + ')')
     c.execute('CREATE TABLE IF NOT EXISTS isoforms (' + column_definitions(ISOFORM_COLUMNS) + ')')
     c.execute('CREATE TABLE IF NOT EXISTS proteoforms (' + column_definitions(PROTEOFORM_COLUMNS) + ')')
-    c.execute('CREATE TABLE IF NOT EXISTS entity_map (id SERIAL PRIMARY KEY, parent_gene TEXT, ensembl_mrna TEXT, ensembl_prot TEXT)')
+    c.execute('CREATE TABLE IF NOT EXISTS entity_map (id SERIAL PRIMARY KEY, ensembl_gene TEXT, ensembl_mrna TEXT, ensembl_prot TEXT)')
     conn.commit()
     c.close()
     conn.close()
 
 
 def clear_tables(postgres_user=None, postgres_password=None):
+    print("Clearing tables")
     conn = psycopg2.connect(dbname='accessive', user=postgres_user, password=postgres_password, host='localhost', port='5432')
     c = conn.cursor()
     c.execute('DROP TABLE IF EXISTS species')
@@ -41,6 +42,7 @@ def clear_tables(postgres_user=None, postgres_password=None):
     conn.commit()
     c.close()
     conn.close()
+    print("Cleared tables")
 
 
 def load_ensembl_jsonfile(json_file, db_file = 'accessive_sqlite.db'):
@@ -60,7 +62,7 @@ def load_ensembl_jsonfile(json_file, db_file = 'accessive_sqlite.db'):
     c.execute('CREATE TABLE IF NOT EXISTS genes (' + column_definitions(GENE_COLUMNS) + ')')
     c.execute('CREATE TABLE IF NOT EXISTS isoforms (' + column_definitions(ISOFORM_COLUMNS) + ')')
     c.execute('CREATE TABLE IF NOT EXISTS proteoforms (' + column_definitions(PROTEOFORM_COLUMNS) + ')')
-    c.execute('CREATE TABLE IF NOT EXISTS entity_map (id SERIAL PRIMARY KEY, parent_gene TEXT, ensembl_mrna TEXT, ensembl_prot TEXT)')
+    c.execute('CREATE TABLE IF NOT EXISTS entity_map (id SERIAL PRIMARY KEY, ensembl_gene TEXT, ensembl_mrna TEXT, ensembl_prot TEXT)')
 
     print('Current size:')
     c.execute('SELECT COUNT(*) FROM species')
@@ -93,6 +95,8 @@ def load_ensembl_jsonfile(json_file, db_file = 'accessive_sqlite.db'):
 
     for row, gene in enumerate(data['genes']):
         gene_ensembl = single_item(gene, 'id')
+        gene_name = list_item(gene, 'name')
+        gene_description = list_item(gene, 'description')
         gene_arrayexpress = list_item(gene, 'ArrayExpress')
         gene_biogrid = list_item(gene, 'BioGRID')
         gene_ens_lrg_gene = list_item(gene, 'ENS_LRG_gene')
@@ -111,21 +115,23 @@ def load_ensembl_jsonfile(json_file, db_file = 'accessive_sqlite.db'):
             continue
 
         c.execute(f"INSERT INTO genes VALUES (" + ', '.join(['%s' for _ in GENE_COLUMNS]) + ')', 
-                  (gene_ensembl, taoxn_id, gene_arrayexpress, gene_biogrid, gene_ens_lrg_gene, gene_entrez, gene_genecards, gene_hgnc, gene_mim_gene,
+                  (gene_ensembl, taxon_id, gene_description, gene_name, gene_arrayexpress, gene_biogrid, gene_ens_lrg_gene, gene_entrez, gene_genecards, gene_hgnc, gene_mim_gene,
                    gene_pfam, gene_uniprot_gene, gene_wikigene))
 
-        gene_acc_types = [(gene_ensembl, 'ensembl_gene'), (gene_entrez, 'entrez_gene'), (gene_hgnc, 'hgnc'), (gene_uniprot_gene, 'uniprot_gene'),
+        gene_acc_types = [(gene_ensembl, 'ensembl_gene'), (gene_name, 'gene_name'), (gene_entrez, 'entrez_gene'), (gene_hgnc, 'hgnc'), (gene_uniprot_gene, 'uniprot_gene'),
                           (gene_arrayexpress, 'arrayexpress'), (gene_biogrid, 'biogrid'), (gene_ens_lrg_gene, 'ens_lrg_gene'),
                           (gene_genecards, 'genecards'), (gene_mim_gene, 'mim_gene'), (gene_pfam, 'pfam'), (gene_wikigene, 'wikigene')]
         for acc, acc_type in gene_acc_types:
-            if acc is not None:
+            if acc is None:
+                continue
+            elif isinstance(acc, str):
                 c.execute(f"INSERT INTO identifiers VALUES (" + ', '.join(['%s' for _ in IDENTIFIER_COLUMNS]) + ') ON CONFLICT DO NOTHING', 
-                          (acc, acc_type, gene_ensembl, 'ensembl_gene'))
+                          (acc, acc_type, gene_ensembl, 'ensembl_gene', taxon_id))
+            elif isinstance(acc, list):
+                for acc_ in acc:
+                    c.execute(f"INSERT INTO identifiers VALUES (" + ', '.join(['%s' for _ in IDENTIFIER_COLUMNS]) + ') ON CONFLICT DO NOTHING', 
+                              (acc_, acc_type, gene_ensembl, 'ensembl_gene', taxon_id))
         
-        ## Not necessary?
-        # if 'transcripts' not in gene or len(gene['transcripts']) == 0:
-        #     c.execute(f"INSERT INTO entity_map VALUES (?, ?, ?)", (gene_ensembl, None, None))
-
         for isoform in gene.get('transcripts', []):
             iso_ensembl = single_item(isoform, 'id')
             iso_ccds = list_item(isoform, 'CCDS')
@@ -141,12 +147,18 @@ def load_ensembl_jsonfile(json_file, db_file = 'accessive_sqlite.db'):
             iso_acc_types = [(iso_ensembl, 'ensembl_mrna'), (iso_ccds, 'ccds'), (iso_ens_lrg_transcript, 'ens_lrg_transcript'), (iso_refseq_mrna, 'refseq_mrna'),
                              (iso_refseq_ncrna, 'refseq_ncrna'), (iso_ucsc, 'ucsc'), (iso_biotype, 'isoform_biotype')]
             for acc, acc_type in iso_acc_types:
-                if acc is not None:
-                    c.execute(f"INSERT INTO identifiers VALUES (" + ', '.join(['%s' for _ in IDENTIFIER_COLUMNS]) + ') ON CONFLICT DO NOTHING',
-                              (acc, acc_type, iso_ensembl, 'ensembl_transcript'))
+                if acc is None:
+                    continue
+                elif isinstance(acc, str):
+                    c.execute(f"INSERT INTO identifiers VALUES (" + ', '.join(['%s' for _ in IDENTIFIER_COLUMNS]) + ') ON CONFLICT DO NOTHING', 
+                              (acc, acc_type, iso_ensembl, 'ensembl_mrna', taxon_id))
+                elif isinstance(acc, list):
+                    for acc_ in acc:
+                        c.execute(f"INSERT INTO identifiers VALUES (" + ', '.join(['%s' for _ in IDENTIFIER_COLUMNS]) + ') ON CONFLICT DO NOTHING', 
+                                  (acc_, acc_type, iso_ensembl, 'ensembl_mrna', taxon_id))
 
             if 'translations' not in isoform or len(isoform['translations']) == 0:
-                c.execute(f"INSERT INTO entity_map (parent_gene, ensembl_mrna, ensembl_prot) VALUES (%s, %s, %s)", (gene_ensembl, iso_ensembl, None))
+                c.execute(f"INSERT INTO entity_map (ensembl_gene, ensembl_mrna, ensembl_prot) VALUES (%s, %s, %s)", (gene_ensembl, iso_ensembl, None))
 
             for proteoform in isoform.get('translations', []):
                 # TODO TODO check if uniprot-isoform-lacking translations are real proteforms... once ensembl is WORKING AGAIN >:(
@@ -168,11 +180,17 @@ def load_ensembl_jsonfile(json_file, db_file = 'accessive_sqlite.db'):
                 pform_acc_types = [(pform_ensembl, 'ensembl_prot'), (pform_uniparc, 'uniparc'), (pform_uniprot_isoform, 'uniprot_isoform'), (pform_uniprot_swissprot, 'uniprot_swissprot'),
                                    (pform_uniprot_trembl, 'uniprot_trembl'), (pform_refseq_peptide, 'refseq_peptide'), (pform_alphafold, 'alphafold')]
                 for acc, acc_type in pform_acc_types:
-                    if acc is not None:
-                        c.execute(f"INSERT INTO identifiers VALUES (" + ', '.join(['%s' for _ in IDENTIFIER_COLUMNS]) + ') ON CONFLICT DO NOTHING',
-                                  (acc, acc_type, pform_ensembl, 'ensembl_prot'))
+                    if acc is None:
+                        continue
+                    elif isinstance(acc, str):
+                        c.execute(f"INSERT INTO identifiers VALUES (" + ', '.join(['%s' for _ in IDENTIFIER_COLUMNS]) + ') ON CONFLICT DO NOTHING', 
+                                  (acc, acc_type, pform_ensembl, 'ensembl_prot', taxon_id))
+                    elif isinstance(acc, list):
+                        for acc_ in acc:
+                            c.execute(f"INSERT INTO identifiers VALUES (" + ', '.join(['%s' for _ in IDENTIFIER_COLUMNS]) + ') ON CONFLICT DO NOTHING', 
+                                      (acc_, acc_type, pform_ensembl, 'ensembl_prot', taxon_id))
 
-                c.execute(f"INSERT INTO entity_map (parent_gene, ensembl_mrna, ensembl_prot) VALUES (%s, %s, %s)", (gene_ensembl, iso_ensembl, pform_ensembl))
+                c.execute(f"INSERT INTO entity_map (ensembl_gene, ensembl_mrna, ensembl_prot) VALUES (%s, %s, %s)", (gene_ensembl, iso_ensembl, pform_ensembl))
 
 
         if row % 1000 == 0:
