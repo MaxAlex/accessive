@@ -1,11 +1,12 @@
 import json
-import sqlite3
 import pandas as pd
-
-from data_structure import *
-
+from ftplib import FTP
+import os
+import gzip
 import psycopg2
-
+from data_structure import *
+import tempfile
+import io
 
 def initialize_database(postgres_user=None, postgres_password=None):
     conn = psycopg2.connect(dbname='postgres', user=postgres_user, password=postgres_password, host='localhost', port='5432')
@@ -45,12 +46,38 @@ def clear_tables(postgres_user=None, postgres_password=None):
     print("Cleared tables")
 
 
+
+
+def download_ensembl_data():
+    # NB the temp directory must last for the entire run!
+    temp_dir = tempfile.TemporaryDirectory()
+    with FTP("http://ftp.ensembl.org") as ftp:
+        ftp.login()
+        ftp.cwd("pub/current_json")
+        for dir_name in ftp.nlst():
+            print(dir_name)
+            ftp.cwd(dir_name)
+            for item in ftp.nlst():
+                if item.endswith('.json'):
+                    local_file = os.path.join(temp_dir.name, dir_name + '_' + item)
+                    # with gzip.open(local_file, 'wb') as f:
+                    data = io.BytesIO()
+                    ftp.retrbinary('RETR ' + item, data.write)
+                    data.seek(0)
+                    yield data 
+                    break
+            ftp.cwd('..')
+
+
 def load_ensembl_jsonfile(json_file, db_file = 'accessive_sqlite.db'):
-    try:
-        data = json.load(open(json_file, 'r')) # NB this is typically very large!
-    except json.decoder.JSONDecodeError:
-        import pickle
-        data = pickle.load(open(json_file, 'rb'))
+    if isinstance(json_file, str):
+        try:
+            data = json.load(open(json_file, 'r')) # NB this is typically very large!
+        except json.decoder.JSONDecodeError:
+            import pickle
+            data = pickle.load(open(json_file, 'rb'))
+    else:
+        data = json.load(json_file)
 
     # conn = sqlite3.connect(db_file) 
     # c = conn.cursor()
@@ -205,7 +232,11 @@ def load_ensembl_jsonfile(json_file, db_file = 'accessive_sqlite.db'):
     print(f"Done compiling {data['organism']['display_name']} database ({row} genes.)") # type: ignore
 
 
-
+# TODO TODO test this out!
+def compile_full_database():
+    for data_buffer in download_ensembl_data():
+        load_ensembl_jsonfile(data_buffer)
+        del data_buffer
 
 
 if __name__ == '__main__':
