@@ -4,46 +4,12 @@ from ftplib import FTP
 import os
 import gzip
 import psycopg2
-from data_structure import *
 import tempfile
 import io
 
-def initialize_database(postgres_user=None, postgres_password=None):
-    conn = psycopg2.connect(dbname='postgres', user=postgres_user, password=postgres_password, host='localhost', port='5432')
-    c = conn.cursor()
-    c.execute('CREATE DATABASE accessive')
-    c.close()
-    conn.close()
+from data_structure import *
+from deploy_database import load_config
 
-
-def initialize_tables(postgres_user=None, postgres_password=None):
-    conn = psycopg2.connect(dbname='accessive', user=postgres_user, password=postgres_password, host='localhost', port='5432')
-    c = conn.cursor()
-    c.execute('CREATE TABLE IF NOT EXISTS species (' + ','.join(SPECIES_COLUMNS) + ')')
-    c.execute('CREATE TABLE IF NOT EXISTS identifiers (' + ','.join(IDENTIFIER_COLUMNS) + ')')
-    c.execute('CREATE TABLE IF NOT EXISTS genes (' + column_definitions(GENE_COLUMNS) + ')')
-    c.execute('CREATE TABLE IF NOT EXISTS isoforms (' + column_definitions(ISOFORM_COLUMNS) + ')')
-    c.execute('CREATE TABLE IF NOT EXISTS proteoforms (' + column_definitions(PROTEOFORM_COLUMNS) + ')')
-    c.execute('CREATE TABLE IF NOT EXISTS entity_map (id SERIAL PRIMARY KEY, ensembl_gene TEXT, ensembl_mrna TEXT, ensembl_prot TEXT)')
-    conn.commit()
-    c.close()
-    conn.close()
-
-
-def clear_tables(postgres_user=None, postgres_password=None):
-    print("Clearing tables")
-    conn = psycopg2.connect(dbname='accessive', user=postgres_user, password=postgres_password, host='localhost', port='5432')
-    c = conn.cursor()
-    c.execute('DROP TABLE IF EXISTS species')
-    c.execute('DROP TABLE IF EXISTS identifiers')
-    c.execute('DROP TABLE IF EXISTS genes')
-    c.execute('DROP TABLE IF EXISTS isoforms')
-    c.execute('DROP TABLE IF EXISTS proteoforms')
-    c.execute('DROP TABLE IF EXISTS entity_map')
-    conn.commit()
-    c.close()
-    conn.close()
-    print("Cleared tables")
 
 
 
@@ -51,7 +17,7 @@ def clear_tables(postgres_user=None, postgres_password=None):
 def download_ensembl_data():
     # NB the temp directory must last for the entire run!
     temp_dir = tempfile.TemporaryDirectory()
-    with FTP("http://ftp.ensembl.org") as ftp:
+    with FTP("ftp.ensembl.org") as ftp:
         ftp.login()
         ftp.cwd("pub/current_json")
         for dir_name in ftp.nlst():
@@ -59,17 +25,20 @@ def download_ensembl_data():
             ftp.cwd(dir_name)
             for item in ftp.nlst():
                 if item.endswith('.json'):
-                    local_file = os.path.join(temp_dir.name, dir_name + '_' + item)
+                    # local_file = os.path.join(temp_dir.name, dir_name + '_' + item)
                     # with gzip.open(local_file, 'wb') as f:
+                    print("Downloading " + item)
                     data = io.BytesIO()
                     ftp.retrbinary('RETR ' + item, data.write)
                     data.seek(0)
+                    print("Downloaded " + item)
                     yield data 
                     break
             ftp.cwd('..')
 
 
-def load_ensembl_jsonfile(json_file, db_file = 'accessive_sqlite.db'):
+def load_ensembl_jsonfile(json_file):
+    config = load_config()
     if isinstance(json_file, str):
         try:
             data = json.load(open(json_file, 'r')) # NB this is typically very large!
@@ -81,7 +50,9 @@ def load_ensembl_jsonfile(json_file, db_file = 'accessive_sqlite.db'):
 
     # conn = sqlite3.connect(db_file) 
     # c = conn.cursor()
-    conn = psycopg2.connect(dbname='accessive', user='postgres', password='foobar', host='localhost', port='5432')
+    print(f"Connecting to database... {config['database_name']}")
+    conn = psycopg2.connect(dbname=config['database_name'], user=config['username'], password=config['password'], 
+                            host=config['host'], port=config['port'])
     c = conn.cursor()
 
     c.execute('CREATE TABLE IF NOT EXISTS species (' + ','.join(SPECIES_COLUMNS) + ')')
@@ -104,6 +75,7 @@ def load_ensembl_jsonfile(json_file, db_file = 'accessive_sqlite.db'):
     print(c.fetchone())
 
     taxon_id = int(data['organism']['taxonomy_id'])
+    print("Compiling " + data['organism']['display_name'] + " database (" + str(len(data['genes'])) + " genes.)")
 
     # Check if species already exists
     c.execute(f"SELECT taxon, valid FROM species WHERE taxon = '{data['organism']['taxonomy_id']}'")
@@ -141,7 +113,7 @@ def load_ensembl_jsonfile(json_file, db_file = 'accessive_sqlite.db'):
             skipped_lrg += 1
             continue
 
-        c.execute(f"INSERT INTO genes VALUES (" + ', '.join(['%s' for _ in GENE_COLUMNS]) + ')', 
+        c.execute(f"INSERT INTO genes ({', '.join(GENE_COLUMNS)}) VALUES (" + ', '.join(['%s' for _ in GENE_COLUMNS]) + ')', 
                   (gene_ensembl, taxon_id, gene_description, gene_name, gene_arrayexpress, gene_biogrid, gene_ens_lrg_gene, gene_entrez, gene_genecards, gene_hgnc, gene_mim_gene,
                    gene_pfam, gene_uniprot_gene, gene_wikigene))
 
@@ -168,7 +140,7 @@ def load_ensembl_jsonfile(json_file, db_file = 'accessive_sqlite.db'):
             iso_ucsc = list_item(isoform, 'UCSC')
             iso_biotype = list_item(isoform, 'biotype')
 
-            c.execute(f"INSERT INTO isoforms VALUES (" + ', '.join(['%s' for _ in ISOFORM_COLUMNS]) + ')',
+            c.execute(f"INSERT INTO isoforms ({', '.join(ISOFORM_COLUMNS)}) VALUES (" + ', '.join(['%s' for _ in ISOFORM_COLUMNS]) + ')',
                       (iso_ensembl, taxon_id, iso_ccds, iso_ens_lrg_transcript, iso_refseq_mrna, iso_refseq_ncrna, iso_ucsc, iso_biotype))
 
             iso_acc_types = [(iso_ensembl, 'ensembl_mrna'), (iso_ccds, 'ccds'), (iso_ens_lrg_transcript, 'ens_lrg_transcript'), (iso_refseq_mrna, 'refseq_mrna'),
@@ -200,7 +172,7 @@ def load_ensembl_jsonfile(json_file, db_file = 'accessive_sqlite.db'):
                 pform_uniprot_trembl = list_item(proteoform, 'Uniprot/SPTREMBL')
                 pform_pdb = list_item(proteoform, 'PDB')
 
-                c.execute(f"INSERT INTO proteoforms VALUES (" + ', '.join(['%s' for _ in PROTEOFORM_COLUMNS]) + ')',
+                c.execute(f"INSERT INTO proteoforms ({', '.join(PROTEOFORM_COLUMNS)}) VALUES (" + ', '.join(['%s' for _ in PROTEOFORM_COLUMNS]) + ')',
                           (pform_ensembl, taxon_id, pform_uniparc, pform_alphafold, pform_uniprot_swissprot, pform_uniprot_trembl, 
                            pform_uniprot_isoform, pform_refseq_peptide, pform_embl, pform_pdb))
 
@@ -238,14 +210,18 @@ def compile_full_database():
         load_ensembl_jsonfile(data_buffer)
         del data_buffer
 
+        break
+    print("TEST MODE")
+
 
 if __name__ == '__main__':
     import sys
-    clear_tables('postgres', 'foobar')
-    load_ensembl_jsonfile(sys.argv[1]) 
+    # clear_tables('postgres', 'foobar')
+    # load_ensembl_jsonfile(sys.argv[1]) 
     # foo = Accessive('/home/max/biostuff/accessive/accessive_sqlite.db')
     # bar = foo.map_identifiers(['uc002iys'], 'ucsc', ['ensembl_mrna'])
     # print(bar)
+    # compile_full_database()
 
 
 
