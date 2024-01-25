@@ -3,11 +3,37 @@ from collections import defaultdict
 import pandas as pd
 
 from data_structure import *
+from deploy_database import load_config
 
 class Accessive():
-    def __init__(self, dbname='accessive', user='postgres', password=None, host='localhost', port=5432):
-        self.conn = psycopg2.connect(dbname=dbname, user=user, password=password, host=host, port=port)
-        self.c = self.conn.cursor()
+    def __init__(self, dbname=None, user=None, password=None, host='localhost', port=5432):
+        if not (dbname and user and password):
+            config = load_config()
+            dbname = config['database_name']
+            user = config['username']
+            password = config['password']
+            host = config['host']
+            port = config['port']
+
+        try:
+            self.conn = psycopg2.connect(dbname=dbname, user=user, password=password, host=host, port=port)
+            self.c = self.conn.cursor()
+        except psycopg2.OperationalError:
+            raise Exception(f"Could not connect to database {dbname} with user {user}.")
+    
+        self.assert_database_exists()
+
+        self.config = dbname, user, host, port
+
+
+    def assert_database_exists(self):
+        self.c.execute("SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'genes'")
+        if not self.c.fetchone():
+            if self.config[2]=='localhost':
+                raise Exception("Accessive database seems to be missing or empty. Try running 'python -m accessive.deploy_database' to download the database.")
+            else:
+                raise Exception(f"Accessive database seems to be missing or empty. Ensure that the database on {self.config[2]} has been properly configured.")
+        self.conn.commit()
 
 
     def _identifier_type(self, accs, require_unambiguous = False):
