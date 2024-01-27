@@ -185,4 +185,5 @@ def load_db_dump(filepath, admin_database_user = None, admin_database_password =
     print("Loaded database dump")
 
         
-
+if __name__ == '__main__':
+    create_db_dump('reduced_list_database.dump')

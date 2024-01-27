@@ -4,6 +4,7 @@ from ftplib import FTP
 import os
 import gzip
 import psycopg2
+import psycopg2.errors
 import tempfile
 import io
 
@@ -14,22 +15,28 @@ from deploy_database import load_config
 
 
 
-def download_ensembl_data():
-    # NB the temp directory must last for the entire run!
-    temp_dir = tempfile.TemporaryDirectory()
+def download_ensembl_data(include_list=None, already_loaded = []):
     with FTP("ftp.ensembl.org") as ftp:
         ftp.login()
         ftp.cwd("pub/current_json")
         for dir_name in ftp.nlst():
             print(dir_name)
+            if include_list is not None and dir_name not in include_list:
+                print(f"Skipping {dir_name} because it is not in the include list.")
+                continue
+            elif dir_name in already_loaded:
+                print(f"Skipping {dir_name} because it is already loaded.")
+                continue
             ftp.cwd(dir_name)
             for item in ftp.nlst():
                 if item.endswith('.json'):
-                    # local_file = os.path.join(temp_dir.name, dir_name + '_' + item)
-                    # with gzip.open(local_file, 'wb') as f:
-                    print("Downloading " + item)
                     data = io.BytesIO()
-                    ftp.retrbinary('RETR ' + item, data.write)
+                    try:
+                        print("Downloading " + item)
+                        ftp.retrbinary('RETR ' + item, data.write)
+                    except ConnectionResetError:
+                        print("Connection reset error. Trying again.")
+                        ftp.retrbinary('RETR ' + item, data.write)
                     data.seek(0)
                     print("Downloaded " + item)
                     yield data 
@@ -76,18 +83,20 @@ def load_ensembl_jsonfile(json_file):
 
     taxon_id = int(data['organism']['taxonomy_id'])
     print("Compiling " + data['organism']['display_name'] + " database (" + str(len(data['genes'])) + " genes.)")
+    print(data['organism'])
 
     # Check if species already exists
     c.execute(f"SELECT taxon, valid FROM species WHERE taxon = '{data['organism']['taxonomy_id']}'")
     previous_valid = c.fetchone()
-    if previous_valid is not None and previous_valid[0] == 1:
+    if previous_valid is not None and previous_valid[1] == True:
         print(f"Species {data['organism']['display_name']} already exists in database. Skipping.")
         return
-    elif previous_valid is not None and previous_valid[0] == 0:
+    elif previous_valid is not None and previous_valid[1] == False:
         print(f"Species {data['organism']['display_name']} previously failed to load. Reloading.")
 
     # Add species
-    c.execute(f"INSERT INTO species VALUES ('{data['organism']['name']}', '{data['organism']['display_name']}', '{data['organism']['taxonomy_id']}', false) ON CONFLICT DO NOTHING")
+    singlequote = "'"
+    c.execute(f"INSERT INTO species VALUES ('{data['organism']['name']}', '{data['organism']['display_name'].replace(singlequote, '')}', '{data['organism']['taxonomy_id']}', false) ON CONFLICT DO NOTHING")
     conn.commit()
    
     skipped_lrg = 0  # LRG sequences are causing problemes and not even standard? Why did ensembl include them like they did? Ignore for now.
@@ -196,32 +205,51 @@ def load_ensembl_jsonfile(json_file):
             conn.commit()
             print(f"Processed {row} genes.")
 
-    conn.commit()
     c.execute(f"UPDATE species SET valid = true WHERE taxon = '{data['organism']['taxonomy_id']}'")
+    conn.commit()
     c.close()
     conn.close()
     print("Skipped " + str(skipped_lrg) + " LRG sequences.")
     print(f"Done compiling {data['organism']['display_name']} database ({row} genes.)") # type: ignore
 
 
+def current_species_manifest():
+    config = load_config()
+    conn = psycopg2.connect(dbname=config['database_name'], user=config['username'], password=config['password'], 
+                            host=config['host'], port=config['port'])
+    c = conn.cursor()
+    try:
+        c.execute('SELECT * FROM species WHERE valid = true')
+        species = [x[0] for x in c.fetchall()]
+        c.close()
+        conn.close()
+        return species 
+    except psycopg2.errors.UndefinedTable:
+        c.close()
+        conn.close()
+        return []
+
 # TODO TODO test this out!
-def compile_full_database():
-    for data_buffer in download_ensembl_data():
+def compile_full_database(include_list=None):
+    already_loaded = current_species_manifest()
+
+    for data_buffer in download_ensembl_data(include_list, already_loaded):
         load_ensembl_jsonfile(data_buffer)
         del data_buffer
-
-        break
-    print("TEST MODE")
 
 
 if __name__ == '__main__':
     import sys
-    # clear_tables('postgres', 'foobar')
+    # from deploy_database import initialize_database, clear_tables
+    # clear_tables()
     # load_ensembl_jsonfile(sys.argv[1]) 
     # foo = Accessive('/home/max/biostuff/accessive/accessive_sqlite.db')
     # bar = foo.map_identifiers(['uc002iys'], 'ucsc', ['ensembl_mrna'])
     # print(bar)
-    # compile_full_database()
+    # initialize_database()
+    from shorter_species_list import species_list
+    compile_full_database(species_list)
+    # load_ensembl_jsonfile('/data/biostuff/ensembl_data/homo_sapiens_PARTIAL.json')   
 
 
 
