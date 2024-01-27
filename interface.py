@@ -36,10 +36,10 @@ class Accessive():
         self.conn.commit()
 
 
-    def _identifier_type(self, accs, require_unambiguous = False):
+    def _identifier_type(self, accs, taxon, require_unambiguous = False):
         accs = [accs] if isinstance(accs, str) else accs
-        query = f"SELECT identifier, identifier_type FROM identifiers WHERE identifier IN ({','.join(['%s']*len(accs))})" 
-        self.c.execute(query, accs)
+        query = f"SELECT identifier, identifier_type FROM identifiers WHERE taxon = %s AND identifier IN ({','.join(['%s']*len(accs))})" 
+        self.c.execute(query, [taxon]+accs)
         agg = defaultdict(set)
         for id, idtype in self.c.fetchall():
             agg[id].add(idtype)
@@ -119,11 +119,11 @@ class Accessive():
         return out
 
 
-    def map(self, ids, from_type = None, to_types = None, taxon = None, return_query_info = False):
+    def map(self, ids, from_type = None, to_types = None, taxon = None, return_query_info = False, return_format=None):
         ids = [ids] if isinstance(ids, str) else ids 
         assert(to_types is None or isinstance(to_types, list))
         if not from_type:
-            from_type = self._identifier_type(ids)
+            from_type = self._identifier_type(ids, taxon)
 
         if to_types is None:
             if from_type in GENE_COLUMNS:
@@ -138,26 +138,15 @@ class Accessive():
             to_types = [to_types]
         
         result = self._query(ids, from_type, to_types, taxon)
+        if return_format == 'txt':
+            result = result.to_csv(index=False, sep='\t') 
+        elif return_format == 'json':
+            result = result.to_json(orient='records')
+        elif return_format is not None:
+            raise Exception(f"Return format {return_format} is not recognized.")
+
         if return_query_info:
             return {'result': result, 'from_type': from_type, 'to_types': to_types, 'taxon': taxon}
         else:
             return result
-
-    ## Can just query by taxon
-    # def get_all_of_type(self, id_type, taxon):
-    #     if taxon is None:
-    #         raise Exception("Must specify taxon. (Hint: use 9606 for human.)")
-    #     if id_type in GENE_COLUMNS:
-    #         query = f"SELECT {id_type} FROM genes WHERE taxon = {taxon}"
-    #     elif id_type in ISOFORM_COLUMNS:
-    #         query = f"SELECT {id_type} FROM isoforms WHERE taxon = {taxon}"
-    #     elif id_type in PROTEOFORM_COLUMNS:
-    #         query = f"SELECT {id_type} FROM proteoforms WHERE taxon = {taxon}"
-    #     else:
-    #         raise Exception(f"Identifier type {id_type} is not recognized.")
-
-    #     self.c.execute(query)
-    #     self.conn.commit()
-    #     result = [x[0] for x in self.c.fetchall()]
-    #     return sorted(set(sum(result, [])))
 

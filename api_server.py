@@ -69,14 +69,15 @@ def map_identifiers():
         from_type = request.args.get('from_type')
         to_types = request.args.getlist('to_types') if 'to_types' in request.args else None
         taxon = request.args.get('taxon')
-    
+        format = request.args.get('format', 'json')
+
         if not ids:
             raise Exception('No identifiers provided.')
         if not taxon:
             raise Exception('No taxon provided; this is required. (NB: Human is 9606.)')
     
         # Call the map function
-        result = database.map(ids, from_type, to_types, taxon, return_query_info=True)
+        result = database.map(ids, from_type, to_types, taxon, return_query_info=True, return_format=format)
 
         # Return the result
         return jsonify(result)

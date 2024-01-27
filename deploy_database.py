@@ -142,24 +142,9 @@ def create_db_dump(filepath):
 
 
 def load_db_dump(filepath, admin_database_user = None, admin_database_password = None):
-    # if admin_database_user is None:
-    #     admin_database_user = _default_input("Enter the username of a PostgreSQL user with administrative privileges (default 'postgres'): ", 'postgres')
-    # if admin_database_password is None:
-    #     admin_database_password = _default_input(f"Enter the password for {admin_database_user}:", '')
-
     initialize_database(admin_database_user, admin_database_password)
 
     config = load_config()
-    # conn = psycopg2.connect(dbname='postgres', user=admin_database_user, password=admin_database_password,
-    #                         host=config['host'], port=config['port'])
-    # conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
-    # c = conn.cursor()
-    # c.execute(f'CREATE ROLE IF NOT EXISTS {config["username"]} WITH LOGIN PASSWORD \'{config["password"]}\'')
-    # c.execute(f'CREATE DATABASE {config["database_name"]} OWNER {config["username"]}')
-    # c.execute(f'GRANT ALL PRIVILEGES ON DATABASE {config["database_name"]} TO {config["username"]}')
-    # c.close()
-    # conn.close()
-
     try:
         subprocess.run([
             'psql',
@@ -174,26 +159,47 @@ def load_db_dump(filepath, admin_database_user = None, admin_database_password =
     except subprocess.CalledProcessError as e:
         print(f"An error occurred while loading the database dump: {e}")
 
-    # conn = psycopg2.connect(dbname=config['database_name'], user=admin_database_user, password=admin_database_password,
-    #                         host=config['host'], port=config['port'])
-    # conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
-    # c = conn.cursor()
-    # c.execute(f'CREATE ROLE IF NOT EXISTS {config["username"]} WITH LOGIN PASSWORD \'{config["password"]}\'')
-    # c.execute(f'GRANT ALL PRIVILEGES ON DATABASE {config["database_name"]} TO {config["username"]}')
-    # c.close()
-    # conn.close()
     print("Loaded database dump")
+
+
+def finalize_database(extensive_indexing = False):
+    import time
+    start = time.time()
+    print("Building indexes...")
+    config = load_config()
+    conn = psycopg2.connect(dbname=config['database_name'], user=config['username'], password=config['password'],
+                            host=config['host'], port=config['port'])
+    c = conn.cursor()
+    c.execute('CREATE INDEX IF NOT EXISTS gene_index ON genes (ensembl_gene)')
+    c.execute('CREATE INDEX IF NOT EXISTS isoform_index ON isoforms (ensembl_mrna)')
+    c.execute('CREATE INDEX IF NOT EXISTS proteoform_index ON proteoforms (ensembl_prot)')
+    c.execute('CREATE INDEX IF NOT EXISTS identifier_index ON identifiers (identifier, taxon)')
+
+    if extensive_indexing:
+        from data_structure import GENE_COLUMNS, ISOFORM_COLUMNS, PROTEOFORM_COLUMNS
+        print('Extensive indexing enabled. This may take a while...')
+        for column in GENE_COLUMNS[2:]:
+            c.execute(f'CREATE INDEX IF NOT EXISTS gene_{column}_index ON genes USING GIN ({column})')
+        for column in ISOFORM_COLUMNS[2:]:
+            c.execute(f'CREATE INDEX IF NOT EXISTS isoform_{column}_index ON isoforms USING GIN ({column})')
+        for column in PROTEOFORM_COLUMNS[2:]:
+            c.execute(f'CREATE INDEX IF NOT EXISTS proteoform_{column}_index ON proteoforms USING GIN ({column})')
+        conn.commit()
+    
+    print('Completed.')
+    print(f"Time elapsed: {time.time() - start:.2f} seconds")
 
         
 if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='Manage the Accessive database.')
-    parser.add_argument('command', choices=['configure', 'initialize', 'clear', 'dump', 'load'], help='The command to run.')
+    parser.add_argument('command', choices=['configure', 'initialize', 'clear', 'dump', 'load', 'index'], help='The command to run.')
     parser.add_argument('--admin-user', help='The username of a PostgreSQL user with administrative privileges.')
     parser.add_argument('--admin-password', help='The password of the administrative user.')
     parser.add_argument('--dump-file', help='The file to dump the database to.')
     parser.add_argument('--load-file', help='The file to load the database from.')
+    parser.add_argument('--extensive-indexing', action='store_true', help='Enable extensive indexing of the database. This may take a while.')
     args = parser.parse_args()
     if args.command == 'configure':
         configure()
@@ -201,7 +207,7 @@ if __name__ == '__main__':
         initialize_database(args.admin_user, args.admin_password)
         initialize_tables()
     elif args.command == 'clear':
-        if input("Are you sure you want to clear the database? (y/n): ").lower() != 'y':
+        if input("Are you sure you want to clear the database? (y/n): ").lower() == 'y':
             clear_tables()
             clear_database(args.admin_user, args.admin_password)
         else:
@@ -214,5 +220,8 @@ if __name__ == '__main__':
         if not args.load_file:
             raise Exception("No load file specified.")
         load_db_dump(args.load_file, args.admin_user, args.admin_password)
+        finalize_database(args.extensive_indexing)
+    elif args.command == 'index':
+        finalize_database(args.extensive_indexing)
     else:
         raise Exception("Invalid command.")
