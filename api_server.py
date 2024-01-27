@@ -1,16 +1,16 @@
 from flask import Flask, request, jsonify
-from accessor import Accessive
+from interface import Accessive
 
 
 app = Flask(__name__)
-database = Accessive('accessive', 'postgres', 'postgres')
+database = Accessive()
 
 @app.route('/hello', methods=['GET'])
 def hello():
     return "This whole thing is sort of accessive, isn't it?"
 
 
-@app.route('/map_identifiers', methods=['GET'])
+@app.route('/map_identifiers', methods=['GET', 'POST'])
 def map_identifiers():
     """
     Map a list of identifiers from one type to another.
