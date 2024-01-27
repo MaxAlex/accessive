@@ -186,4 +186,33 @@ def load_db_dump(filepath, admin_database_user = None, admin_database_password =
 
         
 if __name__ == '__main__':
-    create_db_dump('reduced_list_database.dump')
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Manage the Accessive database.')
+    parser.add_argument('command', choices=['configure', 'initialize', 'clear', 'dump', 'load'], help='The command to run.')
+    parser.add_argument('--admin-user', help='The username of a PostgreSQL user with administrative privileges.')
+    parser.add_argument('--admin-password', help='The password of the administrative user.')
+    parser.add_argument('--dump-file', help='The file to dump the database to.')
+    parser.add_argument('--load-file', help='The file to load the database from.')
+    args = parser.parse_args()
+    if args.command == 'configure':
+        configure()
+    elif args.command == 'initialize':
+        initialize_database(args.admin_user, args.admin_password)
+        initialize_tables()
+    elif args.command == 'clear':
+        if input("Are you sure you want to clear the database? (y/n): ").lower() != 'y':
+            clear_tables()
+            clear_database(args.admin_user, args.admin_password)
+        else:
+            print("Aborted.")
+    elif args.command == 'dump':
+        if not args.dump_file:
+            raise Exception("No dump file specified.")
+        create_db_dump(args.dump_file)
+    elif args.command == 'load':
+        if not args.load_file:
+            raise Exception("No load file specified.")
+        load_db_dump(args.load_file, args.admin_user, args.admin_password)
+    else:
+        raise Exception("Invalid command.")
