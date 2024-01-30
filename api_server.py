@@ -1,14 +1,9 @@
-import os
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify
 from interface import Accessive
 
 
 app = Flask(__name__)
 database = Accessive()
-
-RESULT_DIR = os.path.join(os.path.dirname(__file__), 'map_result_cache')
-if not os.path.exists(RESULT_DIR):
-    os.makedirs(RESULT_DIR)
 
 
 @app.route('/hello', methods=['GET'])
@@ -90,48 +85,4 @@ def map_identifiers():
     except Exception as e:
         # Handle exceptions and return an error message
         return jsonify({'error': str(e)}), 400
-
-
-@app.route('/map_identifiers_page', methods=['POST'])
-def map_identifiers_page():
-    try:
-        ids = request.args.getlist('ids')  # Expects a list of identifiers
-        from_type = request.args.get('from_type')
-        to_types = request.args.getlist('to_types') if 'to_types' in request.args else None
-        taxon = request.args.get('taxon')
-
-        if not ids:
-            return jsonify({'error': 'No identifiers provided.'}), 400
-        if not taxon:
-            return jsonify({'error': 'No taxon provided; this is required. (NB: Human is 9606.)'}), 400
-    
-        # Call the map function
-        result : dict = database.map(ids, from_type, to_types, taxon, return_query_info=True, return_format='pandas') # type: ignore
-
-        # Return the result
-        result_page = render_template('result_page.html', 
-                                      table_html=result['result'].to_html(classes='dataframe'), # type: ignore
-                                      from_type=result['from_type'], 
-                                      to_types=result['to_types'],
-                                      taxon=result['taxon']
-                                   ) 
-        result_id = hash(result['result'].to_html()) # type: ignore
-        result_file = os.path.join(RESULT_DIR, str(result_id))
-        with open(result_file, 'w') as f:
-            f.write(result_page)
-
-        return jsonify({'result_id': result_id})
-    except Exception as e:
-        # Handle exceptions and return an error message
-        return jsonify({'error': str(e)}), 400
-
-@app.route('/result_page/<result_id>', methods=['GET', 'POST'])
-def result_page(result_id):
-    result_file = os.path.join(RESULT_DIR, result_id)
-    if os.path.exists(result_file):
-        with open(result_file, 'r') as f:
-            return f.read()
-    else:
-        return jsonify({'error': 'No result found with that ID.'}), 400
-
 

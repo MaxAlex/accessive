@@ -143,6 +143,8 @@ class Accessive():
             result = result.to_csv(index=False, sep='\t') 
         elif return_format == 'json':
             result = result.to_json(orient='records')
+        elif return_format is 'pandas':
+            pass
         elif return_format is not None:
             raise Exception(f"Return format {return_format} is not recognized.")
 
