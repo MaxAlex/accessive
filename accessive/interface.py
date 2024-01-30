@@ -2,8 +2,8 @@ import psycopg2
 from collections import defaultdict
 import pandas as pd
 
-from data_structure import *
-from deploy_database import load_config
+from .data_structure import *
+from .deploy_database import load_config
 
 class Accessive():
     def __init__(self, dbname=None, user=None, password=None, host='localhost', port=5432):
@@ -143,7 +143,7 @@ class Accessive():
             result = result.to_csv(index=False, sep='\t') 
         elif return_format == 'json':
             result = result.to_json(orient='records')
-        elif return_format is 'pandas':
+        elif return_format == 'pandas':
             pass
         elif return_format is not None:
             raise Exception(f"Return format {return_format} is not recognized.")

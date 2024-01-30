@@ -1,1 +1,1 @@
-from accessor import Accessive
+from .interface import Accessive

@@ -2,7 +2,7 @@ import os
 import json
 import subprocess
 import gzip
-from data_structure import *
+from .data_structure import *
 import psycopg2
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
