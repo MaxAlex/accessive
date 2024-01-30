@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='Accessive',
+    name='accessive',
     version='0.1.0',
     author='William Max Alexander',
     author_email='max@alexander.bio',
