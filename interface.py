@@ -112,7 +112,7 @@ class Accessive():
                         {' '.join(where_subqueries)}
                         {' OR '.join(listmatch_subqueries)}"""
 
-        print(query % accs)
+        print(query % tuple(accs))
         self.c.execute(query, accs)
         self.conn.commit()
         out = pd.DataFrame(self.c.fetchall(), columns=dest_types)
@@ -139,6 +139,7 @@ class Accessive():
         
         result = self._query(ids, from_type, to_types, taxon)
         if return_format == 'txt':
+            result = result.applymap(lambda x: x if isinstance(x, str) else ','.join(x))
             result = result.to_csv(index=False, sep='\t') 
         elif return_format == 'json':
             result = result.to_json(orient='records')
@@ -150,3 +151,8 @@ class Accessive():
         else:
             return result
 
+
+if __name__ == '__main__':
+    foo = Accessive()
+    print(foo.map(['ENSG00000139618', 'ENSG00000139618.20', ], return_query_info=True, return_format='txt', taxon=9606)) 
+    print(foo.map(['VGF', 'JUN'], taxon=9606))

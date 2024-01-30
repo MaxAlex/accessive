@@ -213,6 +213,7 @@ def load_ensembl_jsonfile(json_file):
     print(f"Done compiling {data['organism']['display_name']} database ({row} genes.)") # type: ignore
 
 
+
 def current_species_manifest():
     config = load_config()
     conn = psycopg2.connect(dbname=config['database_name'], user=config['username'], password=config['password'], 
@@ -247,8 +248,8 @@ if __name__ == '__main__':
     # bar = foo.map_identifiers(['uc002iys'], 'ucsc', ['ensembl_mrna'])
     # print(bar)
     # initialize_database()
-    from shorter_species_list import species_list
-    compile_full_database(species_list)
+    # from shorter_species_list import species_list
+    # compile_full_database(species_list)
     # load_ensembl_jsonfile('/data/biostuff/ensembl_data/homo_sapiens_PARTIAL.json')   
 
 

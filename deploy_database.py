@@ -1,6 +1,7 @@
 import os
 import json
 import subprocess
+import gzip
 from data_structure import *
 import psycopg2
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
@@ -134,9 +135,12 @@ def create_db_dump(filepath):
             '-U', config['username'],
             '-h', config['host'],
             '-d', config['database_name'],
-            '-f', filepath 
-        ], env={'PGPASSWORD': config['password']},
-        check=True)
+            # '-f', filepath 
+        ], 
+        env={'PGPASSWORD': config['password']},
+        check=True,
+        stdout=subprocess.PIPE)
+        
     except subprocess.CalledProcessError as e:
         print(f"An error occurred while creating the database dump: {e}")
 
@@ -151,7 +155,6 @@ def load_db_dump(filepath, admin_database_user = None, admin_database_password =
             '-U', config['username'],
             '-h', config['host'],
             '-d', config['database_name'],
-            # '-f', filepath 
         ], 
         env={'PGPASSWORD': config['password']},
         stdin=open(filepath, 'rb'),
@@ -184,7 +187,9 @@ def finalize_database(extensive_indexing = False):
             c.execute(f'CREATE INDEX IF NOT EXISTS isoform_{column}_index ON isoforms USING GIN ({column})')
         for column in PROTEOFORM_COLUMNS[2:]:
             c.execute(f'CREATE INDEX IF NOT EXISTS proteoform_{column}_index ON proteoforms USING GIN ({column})')
-        conn.commit()
+    conn.commit()
+    c.close()
+    conn.close()
     
     print('Completed.')
     print(f"Time elapsed: {time.time() - start:.2f} seconds")
