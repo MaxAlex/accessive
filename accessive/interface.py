@@ -99,7 +99,10 @@ class Accessive():
                         {' '.join(join_subqueries)}
                         WHERE
                         {' '.join(where_subqueries)}
-                        {source_table}.{from_type} IN ({','.join(['%s']*len(accs))})"""
+                        (
+                        {source_table}.{from_type} IN ({','.join(['%s']*len(accs))})
+                        )
+                        """
         else:
             # Same but we're matching by a list-type column
             listmatch_subqueries = []
@@ -110,7 +113,10 @@ class Accessive():
                         {' '.join(join_subqueries)}
                         WHERE
                         {' '.join(where_subqueries)}
-                        {' OR '.join(listmatch_subqueries)}"""
+                        (
+                        {' OR '.join(listmatch_subqueries)}
+                        )
+                        """
 
         print(query % tuple(accs))
         self.c.execute(query, accs)
