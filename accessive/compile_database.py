@@ -9,7 +9,7 @@ import tempfile
 import io
 
 from data_structure import *
-from deploy_database import load_config
+from database_ops import load_config
 
 
 

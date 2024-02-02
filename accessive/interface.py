@@ -3,7 +3,7 @@ from collections import defaultdict
 import pandas as pd
 
 from .data_structure import *
-from .deploy_database import load_config
+from .database_ops import load_config
 
 class Accessive():
     def __init__(self, dbname=None, user=None, password=None, host='localhost', port=5432):
