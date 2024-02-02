@@ -62,25 +62,6 @@ def load_ensembl_jsonfile(json_file):
                             host=config['host'], port=config['port'])
     c = conn.cursor()
 
-    c.execute('CREATE TABLE IF NOT EXISTS species (' + ','.join(SPECIES_COLUMNS) + ')')
-    c.execute('CREATE TABLE IF NOT EXISTS identifiers (' + ','.join(IDENTIFIER_COLUMNS) + ')')
-    c.execute('CREATE TABLE IF NOT EXISTS genes (' + column_definitions(GENE_COLUMNS) + ')')
-    c.execute('CREATE TABLE IF NOT EXISTS isoforms (' + column_definitions(ISOFORM_COLUMNS) + ')')
-    c.execute('CREATE TABLE IF NOT EXISTS proteoforms (' + column_definitions(PROTEOFORM_COLUMNS) + ')')
-    c.execute('CREATE TABLE IF NOT EXISTS entity_map (id SERIAL PRIMARY KEY, ensembl_gene TEXT, ensembl_mrna TEXT, ensembl_prot TEXT)')
-
-    print('Current size:')
-    c.execute('SELECT COUNT(*) FROM species')
-    print(c.fetchone())
-    c.execute('SELECT COUNT(*) FROM identifiers')
-    print(c.fetchone())
-    c.execute('SELECT COUNT(*) FROM genes')
-    print(c.fetchone())
-    c.execute('SELECT COUNT(*) FROM isoforms')
-    print(c.fetchone())
-    c.execute('SELECT COUNT(*) FROM proteoforms')
-    print(c.fetchone())
-
     taxon_id = int(data['organism']['taxonomy_id'])
     print("Compiling " + data['organism']['display_name'] + " database (" + str(len(data['genes'])) + " genes.)")
     print(data['organism'])
@@ -93,6 +74,11 @@ def load_ensembl_jsonfile(json_file):
         return
     elif previous_valid is not None and previous_valid[1] == False:
         print(f"Species {data['organism']['display_name']} previously failed to load. Reloading.")
+
+    c.execute(f'CREATE TABLE IF NOT EXISTS genes_{taxon_id} PARTITION OF genes FOR VALUES IN {taxon_id}')
+    c.execute(f'CREATE TABLE IF NOT EXISTS isoforms_{taxon_id} PARTITION OF isoforms FOR VALUES IN {taxon_id}')
+    c.execute(f'CREATE TABLE IF NOT EXISTS proteoforms_{taxon_id} PARTITION OF proteoforms FOR VALUES IN {taxon_id}')
+    c.execute(f'CREATE TABLE IF NOT EXISTS entity_map_{taxon_id} PARTITION OF entity_map FOR VALUES IN {taxon_id}')
 
     # Add species
     singlequote = "'"
