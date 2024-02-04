@@ -136,38 +136,36 @@ def clear_tables():
 
 def create_db_dump(filepath):
     config = load_config()
-    try:
-        subprocess.run([
-            'pg_dump',
-            '-U', config['username'],
-            '-h', config['host'],
-            '-d', config['database_name'],
-            # '-f', filepath 
-        ], 
-        env={'PGPASSWORD': config['password']},
-        check=True,
-        stdout=subprocess.PIPE)
-        
-    except subprocess.CalledProcessError as e:
-        print(f"An error occurred while creating the database dump: {e}")
+    proc = subprocess.Popen([
+        'pg_dump',
+        '-U', config['username'],
+        '-h', config['host'],
+        '-d', config['database_name'],
+        # '-f', filepath 
+    ], 
+    env={'PGPASSWORD': config['password']},
+    stdout=subprocess.PIPE)
+
+    with gzip.open(filepath, 'wb') as out:
+        for line in proc.stdout.read(): # type: ignore
+            out.write(line) # type: ignore
+
+    print("Database dump to: %s" % filepath)
 
 
 def load_db_dump(filepath, admin_database_user = None, admin_database_password = None):
     initialize_database(admin_database_user, admin_database_password)
 
     config = load_config()
-    try:
-        subprocess.run([
-            'psql',
-            '-U', config['username'],
-            '-h', config['host'],
-            '-d', config['database_name'],
-        ], 
-        env={'PGPASSWORD': config['password']},
-        stdin=open(filepath, 'rb'),
-        check=True)
-    except subprocess.CalledProcessError as e:
-        print(f"An error occurred while loading the database dump: {e}")
+    subprocess.run([
+        'psql',
+        '-U', config['username'],
+        '-h', config['host'],
+        '-d', config['database_name'],
+    ], 
+    env={'PGPASSWORD': config['password']},
+    stdin=gzip.open(filepath, 'rb'), # type: ignore
+    check=True)
 
     print("Loaded database dump")
 
