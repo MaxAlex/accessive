@@ -144,6 +144,10 @@ class Accessive():
             to_types = [to_types]
         
         result = self._query(ids, from_type, to_types, taxon)
+
+        dedup_ind = result.applymap(lambda x: x if not isinstance(x, list) else ','.join(x)).drop_duplicates().index
+        result = result.loc[dedup_ind]
+
         if return_format == 'txt':
             result = result.applymap(lambda x: x if isinstance(x, str) else ','.join(x))
             result = result.to_csv(index=False, sep='\t') 
