@@ -59,15 +59,21 @@ def initialize_database(admin_database_user = None, admin_database_password = No
     
     config = load_config()
     print(f"Initializing database {config['database_name']}")
-    conn = psycopg2.connect(dbname='postgres', user=admin_database_user, password=admin_database_password, 
-                            host=config['host'], port=config['port'])
-    conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
-    c = conn.cursor()
-    c.execute(f'CREATE ROLE {config["username"]} WITH LOGIN PASSWORD \'{config["password"]}\'')
-    c.execute(f'CREATE DATABASE {config["database_name"]} OWNER {config["username"]}')
-    c.execute(f'GRANT ALL PRIVILEGES ON DATABASE {config["database_name"]} TO {config["username"]}')
-    c.close()
-    conn.close()
+
+    try:
+        conn = psycopg2.connect(dbname='postgres', user=admin_database_user, password=admin_database_password, 
+                                host=config['host'], port=config['port'])
+        conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+        c = conn.cursor()
+        c.execute(f'CREATE ROLE {config["username"]} WITH LOGIN PASSWORD \'{config["password"]}\'')
+        c.execute(f'CREATE DATABASE {config["database_name"]} OWNER {config["username"]}')
+        c.execute(f'GRANT ALL PRIVILEGES ON DATABASE {config["database_name"]} TO {config["username"]}')
+        c.close()
+        conn.close()
+    except psycopg2.errors.DuplicateObject as err:
+        # TODO instead of catching as an error, check beforehand if the expected user exists
+        print(err)
+        print("User pre-initialized; skipping")
     print("Initialized database")
 
 def clear_database(admin_database_user = None, admin_database_password = None):
@@ -100,10 +106,10 @@ def initialize_tables():
     c = conn.cursor()
     c.execute('CREATE TABLE IF NOT EXISTS species (' + ','.join(SPECIES_COLUMNS) + ')')
     c.execute('CREATE TABLE IF NOT EXISTS identifiers (' + ','.join(IDENTIFIER_COLUMNS) + ')')
-    c.execute('CREATE TABLE IF NOT EXISTS genes (' + column_definitions(GENE_COLUMNS) + ') PARTITION BY (taxon)')
-    c.execute('CREATE TABLE IF NOT EXISTS isoforms (' + column_definitions(ISOFORM_COLUMNS) + ') PARTITION BY (taxon)')
-    c.execute('CREATE TABLE IF NOT EXISTS proteoforms (' + column_definitions(PROTEOFORM_COLUMNS) + ') PARTITION BY (taxon)')
-    c.execute('CREATE TABLE IF NOT EXISTS entity_map (id SERIAL PRIMARY KEY, ensembl_gene TEXT, ensembl_mrna TEXT, ensembl_prot TEXT) PARTITION BY (taxon)')
+    c.execute('CREATE TABLE IF NOT EXISTS genes (' + column_definitions(GENE_COLUMNS) + ') PARTITION BY LIST (taxon)')
+    c.execute('CREATE TABLE IF NOT EXISTS isoforms (' + column_definitions(ISOFORM_COLUMNS) + ') PARTITION BY LIST (taxon)')
+    c.execute('CREATE TABLE IF NOT EXISTS proteoforms (' + column_definitions(PROTEOFORM_COLUMNS) + ') PARTITION BY LIST (taxon)')
+    c.execute('CREATE TABLE IF NOT EXISTS entity_map (id SERIAL, ensembl_gene TEXT, ensembl_mrna TEXT, ensembl_prot TEXT, taxon INTEGER) PARTITION BY LIST (taxon)')
     conn.commit()
     c.close()
     conn.close()
