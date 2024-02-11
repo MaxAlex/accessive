@@ -8,14 +8,14 @@ import psycopg2.errors
 import tempfile
 import io
 
-from data_structure import *
-from database_ops import load_config
+from .data_structure import *
+from .database_ops import load_config
 
 
 
 
 
-def download_ensembl_data(include_list=None, already_loaded = []):
+def download_ensembl_data(include_list=None, already_loaded = [], data_save_dir = None):
     with FTP("ftp.ensembl.org") as ftp:
         ftp.login()
         ftp.cwd("pub/current_json")
@@ -30,14 +30,31 @@ def download_ensembl_data(include_list=None, already_loaded = []):
             ftp.cwd(dir_name)
             for item in ftp.nlst():
                 if item.endswith('.json'):
-                    data = io.BytesIO()
+                    if data_save_dir:
+                        cache_file = os.path.join(data_save_dir, item)+'.gz'
+                        if os.path.exists(cache_file):
+                            print('Cached: %s' % cache_file)
+                            yield gzip.open(cache_file, 'rb')  
+                            break 
+                        else:
+                            print('Caching: %s' % cache_file)
+                            data = gzip.open(cache_file, 'wb')
+                    else:
+                        data = io.BytesIO()
+
                     try:
                         print("Downloading " + item)
                         ftp.retrbinary('RETR ' + item, data.write)
                     except ConnectionResetError:
                         print("Connection reset error. Trying again.")
                         ftp.retrbinary('RETR ' + item, data.write)
-                    data.seek(0)
+
+                    if data_save_dir:
+                        data.close()
+                        data = gzip.open(os.path.join(data_save_dir, item)+'.gz', 'rb')  
+                    else:
+                        data.seek(0)
+
                     print("Downloaded " + item)
                     yield data 
                     break
@@ -75,10 +92,10 @@ def load_ensembl_jsonfile(json_file):
     elif previous_valid is not None and previous_valid[1] == False:
         print(f"Species {data['organism']['display_name']} previously failed to load. Reloading.")
 
-    c.execute(f'CREATE TABLE IF NOT EXISTS genes_{taxon_id} PARTITION OF genes FOR VALUES IN {taxon_id}')
-    c.execute(f'CREATE TABLE IF NOT EXISTS isoforms_{taxon_id} PARTITION OF isoforms FOR VALUES IN {taxon_id}')
-    c.execute(f'CREATE TABLE IF NOT EXISTS proteoforms_{taxon_id} PARTITION OF proteoforms FOR VALUES IN {taxon_id}')
-    c.execute(f'CREATE TABLE IF NOT EXISTS entity_map_{taxon_id} PARTITION OF entity_map FOR VALUES IN {taxon_id}')
+    c.execute(f'CREATE TABLE IF NOT EXISTS genes_{taxon_id} PARTITION OF genes FOR VALUES IN ({taxon_id})')
+    c.execute(f'CREATE TABLE IF NOT EXISTS isoforms_{taxon_id} PARTITION OF isoforms FOR VALUES IN ({taxon_id})')
+    c.execute(f'CREATE TABLE IF NOT EXISTS proteoforms_{taxon_id} PARTITION OF proteoforms FOR VALUES IN ({taxon_id})')
+    c.execute(f'CREATE TABLE IF NOT EXISTS entity_map_{taxon_id} PARTITION OF entity_map FOR VALUES IN ({taxon_id})')
 
     # Add species
     singlequote = "'"
@@ -152,7 +169,7 @@ def load_ensembl_jsonfile(json_file):
                                   (acc_, acc_type, iso_ensembl, 'ensembl_mrna', taxon_id))
 
             if 'translations' not in isoform or len(isoform['translations']) == 0:
-                c.execute(f"INSERT INTO entity_map (ensembl_gene, ensembl_mrna, ensembl_prot) VALUES (%s, %s, %s)", (gene_ensembl, iso_ensembl, None))
+                c.execute(f"INSERT INTO entity_map (ensembl_gene, ensembl_mrna, ensembl_prot, taxon) VALUES (%s, %s, %s, %s)", (gene_ensembl, iso_ensembl, None, taxon_id))
 
             for proteoform in isoform.get('translations', []):
                 # TODO TODO check if uniprot-isoform-lacking translations are real proteforms... once ensembl is WORKING AGAIN >:(
@@ -184,7 +201,7 @@ def load_ensembl_jsonfile(json_file):
                             c.execute(f"INSERT INTO identifiers VALUES (" + ', '.join(['%s' for _ in IDENTIFIER_COLUMNS]) + ') ON CONFLICT DO NOTHING', 
                                       (acc_, acc_type, pform_ensembl, 'ensembl_prot', taxon_id))
 
-                c.execute(f"INSERT INTO entity_map (ensembl_gene, ensembl_mrna, ensembl_prot) VALUES (%s, %s, %s)", (gene_ensembl, iso_ensembl, pform_ensembl))
+                c.execute(f"INSERT INTO entity_map (ensembl_gene, ensembl_mrna, ensembl_prot, taxon) VALUES (%s, %s, %s, %s)", (gene_ensembl, iso_ensembl, pform_ensembl, taxon_id))
 
 
         if row % 1000 == 0:
@@ -217,25 +234,27 @@ def current_species_manifest():
         return []
 
 # TODO TODO test this out!
-def compile_full_database(include_list=None):
+def compile_full_database(include_list=None, cache_dir=None):
+    assert(os.path.exists(cache_dir))
     already_loaded = current_species_manifest()
 
-    for data_buffer in download_ensembl_data(include_list, already_loaded):
+    for data_buffer in download_ensembl_data(include_list, already_loaded, cache_dir):
         load_ensembl_jsonfile(data_buffer)
         del data_buffer
 
 
+from .database_ops import initialize_database, initialize_tables, clear_tables
 if __name__ == '__main__':
     import sys
-    # from deploy_database import initialize_database, clear_tables
     # clear_tables()
     # load_ensembl_jsonfile(sys.argv[1]) 
     # foo = Accessive('/home/max/biostuff/accessive/accessive_sqlite.db')
     # bar = foo.map_identifiers(['uc002iys'], 'ucsc', ['ensembl_mrna'])
     # print(bar)
-    # initialize_database()
-    # from shorter_species_list import species_list
-    # compile_full_database(species_list)
+    species_list = open('/home/max/biostuff/accessive/shorter_species_list.txt').read().strip().split()
+    print(species_list[:10])
+    initialize_tables()
+    compile_full_database(species_list, cache_dir = '/data/biostuff/ensembl_data/cache')
     # load_ensembl_jsonfile('/data/biostuff/ensembl_data/homo_sapiens_PARTIAL.json')   
 
 

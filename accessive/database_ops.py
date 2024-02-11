@@ -136,6 +136,14 @@ def clear_tables():
 
 def create_db_dump(filepath):
     config = load_config()
+    print(config)
+    print([
+        'pg_dump',
+        '-U', config['username'],
+        '-h', config['host'],
+        '-d', config['database_name'],
+        # '-f', filepath 
+    ])
     proc = subprocess.Popen([
         'pg_dump',
         '-U', config['username'],
@@ -147,7 +155,7 @@ def create_db_dump(filepath):
     stdout=subprocess.PIPE)
 
     with gzip.open(filepath, 'wb') as out:
-        for line in proc.stdout.read(): # type: ignore
+        for line in proc.stdout: # type: ignore
             out.write(line) # type: ignore
 
     print("Database dump to: %s" % filepath)

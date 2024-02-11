@@ -22,7 +22,7 @@ assert(len(AMBIGUOUS_IDENTIFIERS) == 1), AMBIGUOUS_IDENTIFIERS
 
 
 def column_definitions(columns):
-    return ', '.join([f"{columns[0]} TEXT PRIMARY KEY", f"{columns[1]} INTEGER"] + [f"{x} TEXT[]" for x in columns[2:]])
+    return ', '.join([f"{columns[0]} TEXT", f"{columns[1]} INTEGER"] + [f"{x} TEXT[]" for x in columns[2:]])
 
 
 def single_item(data, key):
