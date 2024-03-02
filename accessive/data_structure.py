@@ -1,14 +1,28 @@
 
-SPECIES_COLUMNS = ['name TEXT UNIQUE', 'display_name TEXT UNIQUE', 'taxon TEXT UNIQUE', 'valid BOOLEAN']
-IDENTIFIER_COLUMNS = ['identifier TEXT', 'identifier_type TEXT', 'referent TEXT', 'referent_type TEXT', 'taxon INTEGER']
+ENTITY_TABLE_COLS = ['taxon INTEGER', 'gene_index INTEGER', 'mrna_index INTEGER', 'prot_index INTEGER']
+IDENTIFIER_TABLE_COLS = ['entity_index INTEGER', 'identifier TEXT', 'taxon INTEGER', 'is_canonical INTEGER'] # Whether the index is _gene or etc is determined in metadata table
+METADATA_COLS = ['identifier_type TEXT', 'entity_type TEXT']
+DIRECTORY_COLS = ['identifier TEXT', 'identifier_type TEXT']
+SPECIES_COLS = ['taxon INTEGER', 'name TEXT', 'common_name TEXT']
 
-GENE_COLUMNS = ['ensembl_gene', 'taxon', 'gene_description', 'gene_name', 'arrayexpress', 'biogrid', 'ens_lrg_gene', 'entrez_gene', 'genecards', 'hgnc', 'mim_gene', 'pfam', 'uniprot_gene', 'wikigene']
-ISOFORM_COLUMNS = ['ensembl_mrna', 'taxon', 'ccds', 'ens_lrg_transcript', 'refseq_mrna', 'refseq_ncrna', 'ucsc', 'isoform_biotype']
-PROTEOFORM_COLUMNS = ['ensembl_prot', 'taxon', 'uniparc', 'alphafold', 'uniprot_swissprot', 'uniprot_trembl', 'uniprot_isoform', 'refseq_peptide', 'embl', 'pdb']
+GENE_COLS = [('ensembl_gene', 'id'), ('gene_description', 'description'), ('gene_name', 'name'), ('arrayexpress', 'ArrayExpress'), ('biogrid', 'BioGRID'), 
+                     ('ens_lrg_gene', 'ENS_LRG_gene'), ('entrez_gene', 'EntrezGene'), ('genecards', 'GeneCards'), ('hgnc', 'HGNC'), 
+                     ('mim_gene', 'MIM_GENE'), ('pfam', 'Pfam'), ('uniprot_gene', 'Uniprot_gn'), ('wikigene', 'WikiGene')]
+ISOFORM_COLS = [('ensembl_mrna', 'id'), ('ccds', 'CCDS'), ('ens_lrg_transcript', 'ENS_LRG_transcript'), ('refseq_mrna', 'RefSeq_mRNA'), ('refseq_ncrna', 'RefSeq_ncRNA'),
+                        ('ucsc', 'UCSC'), ('isoform_biotype', 'biotype')]
+PROTEOFORM_COLS = [('ensembl_prot', 'id'), ('uniparc', 'UniParc'), ('alphafold', 'alphafold'), ('uniprot_swissprot', 'Uniprot/SWISSPROT'), ('uniprot_trembl', 'Uniprot/SPTREMBL'),
+                           ('uniprot_isoform', 'Uniprot_isoform'), ('refseq_peptide', 'RefSeq_peptide'), ('embl', 'EMBL'), ('pdb', 'PDB')]
 
-AMBIGUOUS_IDENTIFIERS = ((set(GENE_COLUMNS) & set(ISOFORM_COLUMNS) | set(GENE_COLUMNS) & set(PROTEOFORM_COLUMNS) | set(ISOFORM_COLUMNS) & set(PROTEOFORM_COLUMNS)) 
-                         - set(['parent_gene', 'proteoform_list']))
-assert(len(AMBIGUOUS_IDENTIFIERS) == 1), AMBIGUOUS_IDENTIFIERS
+
+TO_DATABASE_NAME = dict(GENE_COLS + ISOFORM_COLS + PROTEOFORM_COLS)
+TO_PRETTIER_NAME = {x: y for y, x in TO_DATABASE_NAME.items()}
+TO_DATABASE_NAME.update({x:x for x in TO_DATABASE_NAME.keys()})
+TO_PRETTIER_NAME.update({x:x for x in TO_PRETTIER_NAME.keys()})
+
+
+# AMBIGUOUS_IDENTIFIERS = ((set(GENE_COLUMNS) & set(ISOFORM_COLUMNS) | set(GENE_COLUMNS) & set(PROTEOFORM_COLUMNS) | set(ISOFORM_COLUMNS) & set(PROTEOFORM_COLUMNS)) 
+#                          - set(['parent_gene', 'proteoform_list']))
+# assert(len(AMBIGUOUS_IDENTIFIERS) == 1), AMBIGUOUS_IDENTIFIERS
 # Protein and proteoform levels aren't represented directly in the JSON strucutre; each gene has a list of transcripts, each with
 # precisely one translation listed. However, multiple transcripts can be the same protein, as going by uniprot_swissprot accession. (How? Why??)
 # Group transcripts/translations by swissprot identifier to get the set of "protein", and then take each translation as a separate "proteoform."
@@ -41,7 +55,7 @@ def list_item(data, key):
     try:
         thing = data[key]
     except KeyError:
-        return None
+        return []
     if isinstance(thing, list):
         return thing
     else:
