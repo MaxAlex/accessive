@@ -1,0 +1,1 @@
+The files in this directory are provided for validation purposes and for developers; normal users of Accessive will not need to create their own databases. Instead, download a pre-compiled database using 'python -m accessive.database_ops --download'.
