@@ -14,6 +14,16 @@ class Accessive():
         self.conn = sqlite3.connect(sqlite_file)
         self.c = self.conn.cursor()
 
+        database_ver = self._get_db_version()
+        if database_ver != DATABASE_VERSION:
+            print(f"WARNING: Database version {database_ver} does not match expected version {DATABASE_VERSION}. It may be incompatible with this version of Accessive.")
+            print("You can download the correct database version by running the command 'python -m accessive.database_ops --download'")
+
+
+    def _get_db_version(self):
+        self.c.execute("SELECT version_number FROM database_version")
+        return self.c.fetchone()[0]
+
 
     def _get_identifier_type(self, acc, taxon = None):
         if taxon:
