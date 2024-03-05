@@ -8,6 +8,8 @@ import io
 from ..data_structure import *
 
 def download_ensembl_data(include_list=None, already_loaded = [], data_save_dir = None):
+    if include_list is not None:
+        include_list = [x[1] for x in include_list] # Only the scientific name strings, which match Ensembl's directory names
     with FTP("ftp.ensembl.org") as ftp:
         ftp.login()
         ftp.cwd("pub/current_json")
