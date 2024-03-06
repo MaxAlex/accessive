@@ -8,7 +8,7 @@ from .data_structure import DATABASE_VERSION
 
 DATABASE_DIRECTORY = os.path.join(os.path.dirname(__file__), 'data')
 DATABASE_FILE = os.path.join(DATABASE_DIRECTORY, f'accessive_db.{DATABASE_VERSION.replace(".", "-")}.sqlite')
-DATA_DOWNLOAD_URL = '...something...'
+DATA_DOWNLOAD_URL = 'https://github.com/MaxAlex/accessive/releases/download/v0.1/accessive_db.0-1.sqlite.gz'
 
 
 def download_database(force = False):
@@ -24,6 +24,8 @@ def download_database(force = False):
     print("Database download complete.")
    
     req = requests.get(DATA_DOWNLOAD_URL)
+    if req.status_code == 404:
+        raise requests.HTTPError(f"Could not locate database file download. This may mean your current version of Accessive is out of date. Please update to the latest version and try again.")
     req.raise_for_status()
     with gzip.open(DATABASE_FILE, 'wb') as f:
         f.write(req.content)
