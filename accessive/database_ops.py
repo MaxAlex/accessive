@@ -4,7 +4,7 @@ import requests
 import gzip
 from glob import glob
 from .data_structure import DATABASE_VERSION
-
+import io
 
 DATABASE_DIRECTORY = os.path.join(os.path.dirname(__file__), 'data')
 DATABASE_FILE = os.path.join(DATABASE_DIRECTORY, f'accessive_db.{DATABASE_VERSION.replace(".", "-")}.sqlite')
@@ -21,15 +21,16 @@ def download_database(force = False):
             print("Database download cancelled.")
             return
     print(f"Downloading database to {DATABASE_FILE}...")
-    print("Database download complete.")
    
-    req = requests.get(DATA_DOWNLOAD_URL)
+    req = requests.get(DATA_DOWNLOAD_URL, stream=True)
     if req.status_code == 404:
         raise requests.HTTPError(f"Could not locate database file download. This may mean your current version of Accessive is out of date. Please update to the latest version and try again.")
     req.raise_for_status()
-    with gzip.open(DATABASE_FILE, 'wb') as f:
-        f.write(req.content)
+    with open(DATABASE_FILE, 'wb') as out:
+        with gzip.open(req.raw, 'rb') as decomp:
+            out.write(decomp.read())
 
+    print("Database download complete.")
 
 def cleanup_data(force = False):
     if not os.path.exists(DATABASE_DIRECTORY):
