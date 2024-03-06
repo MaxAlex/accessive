@@ -82,6 +82,9 @@ def load_ensembl_jsonfile(json_file, sqlite_file):
         gene_index = next_index
         next_index += 1
 
+        if gene['id'][:3] == 'LRG':
+            continue
+
         for db_name, json_name in GENE_COLS:
             for item in list_item(gene, json_name):
                 c.execute(f"INSERT INTO {db_name} (entity_index, identifier, taxon, is_canonical) VALUES (?, ?, ?, ?)", (gene_index, item, taxon, 1))
