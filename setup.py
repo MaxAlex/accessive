@@ -1,27 +1,28 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='accessive',
-    version='0.1.0',
-    author='William Max Alexander',
-    author_email='max@alexander.bio',
-    description='A bioinformatics accession mapping tool',
-    url='https://github.com/maxalex/Accessive',
+    name="Accessive",
+    version="0.1.0",
+    author="William Max Alexander",
+    author_email="accessive@alexander.bio",
+    description="A Python library for converting between different bioinformatic accession types",
+    long_description=open('README.md').read(),
+    long_description_content_type="text/markdown",
+    url="https://github.com/maxalex/accessive",
     packages=find_packages(),
-    include_package_data=True,
     install_requires=[
-        'pandas',
-        'psycopg2-binary'
+        'requests',
+        'pandas>=2.1.0'
     ],
     classifiers=[
         'Development Status :: 3 - Alpha',
         'Intended Audience :: Science/Research',
         'Topic :: Scientific/Engineering :: Bio-Informatics',
         'License :: OSI Approved :: MIT License',
-        'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.7',
-        'Programming Language :: Python :: 3.8',
-        'Programming Language :: Python :: 3.9',
+        "Operating System :: OS Independent",
+        "Programming Language :: Python :: 3",
     ],
-    python_requires='>=3.7',
+    python_requires='>=3.6',
+    package_data={"accessive": ["db_build/*"]},
+    include_package_data=True,
 )
