@@ -11,19 +11,18 @@ Features
 
 Accessive supports the following accession types:
 
-- Ensembl (Gene, mRNA, and Protein)
-  - Gene (ENSG00000096717)
-  - mRNA (ENST00000361390)
-  - Protein (ENSP00000354689)
+- Ensembl
+    - Gene (ENSG00000096717)
+    - mRNA (ENST00000361390)
+    - Proteoform (ENSP00000354689)
 - Uniprot 
     - Swissprot (P00750)
     - TrEMBL (A0A024R161)
     - Isoform (P00750-1)
 - RefSeq 
-    - Gene (NM_001278)
-    - mRNA (NM_001278.2)
+    - mRNA (NM_001278)
     - ncRNA (NR_001278)
-    - Peptide (NP_001265)
+    - Proteoform (NP_001265)
 - Nextprot
     - Gene (NX_P00750)
     - Proteoform (NX_P00750-1)
@@ -49,15 +48,30 @@ To install Accessive, use pip:
 ```bash
 pip install accessive
 ```
+After installation, install the database via the included utiltiy:
+
+```bash
+python -m accessive.database_ops --download
+```
+
+Note that the Accessive database requires approximately 500MB of disk space. 
 
 ## Usage Example
 
-```python
+```
+>>> from accessive import Accessive
+>>> acc = Accessive()
+>>> acc.map(ids=['SIRT1', 'UCP1', 'VGF'], to_types=['uniprot_swissprot', 'uniprot_trembl', 'refseq_mrna'], taxon = 9606)
 
-from accessive import Accessive
+          uniprot_swissprot uniprot_trembl   refseq_mrna
+gene_name                                               
+SIRT1                  None         B0QZ35          None
+SIRT1                  None         E9PC49  NM_001142498
+SIRT1                Q96EB6     A0A024QZQ1     NM_012238
+SIRT1                  None         B0QZ35  NM_001314049
+VGF                  O15240           None          None
+VGF                  O15240           None     NM_003378
+UCP1                 P25874           None     NM_021833
 
-accessive = Accessive()
-
-result = accessive.map(ids=['ENSG00000139618'], from_type='ensembl_gene', to_types=['uniprot_swissprot', 'refseq_peptide'])
 ```
 
