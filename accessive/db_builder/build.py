@@ -33,13 +33,13 @@ def create_sqlite_database(sqlite_file):
     c.execute(f"CREATE TABLE identifier_directory ({', '.join(DIRECTORY_COLS)})")
     c.execute(f"CREATE TABLE species_table ({', '.join(SPECIES_COLS)})")
 
-    for gene_col, _ in GENE_COLS:
+    for gene_col in GENE_COLS:
         c.execute(f"CREATE TABLE {gene_col} ({', '.join(IDENTIFIER_TABLE_COLS)})")
         c.execute(f"INSERT INTO metadata_table (identifier_type, entity_type) VALUES (?, ?)", (gene_col, 'gene'))
-    for isoform_col, _ in ISOFORM_COLS:
+    for isoform_col in ISOFORM_COLS:
         c.execute(f"CREATE TABLE {isoform_col} ({', '.join(IDENTIFIER_TABLE_COLS)})")
         c.execute(f"INSERT INTO metadata_table (identifier_type, entity_type) VALUES (?, ?)", (isoform_col, 'mrna'))
-    for proteoform_col, _ in PROTEOFORM_COLS:
+    for proteoform_col in PROTEOFORM_COLS:
         c.execute(f"CREATE TABLE {proteoform_col} ({', '.join(IDENTIFIER_TABLE_COLS)})")
         c.execute(f"INSERT INTO metadata_table (identifier_type, entity_type) VALUES (?, ?)", (proteoform_col, 'prot'))
 
@@ -88,7 +88,7 @@ def build_indexes(sqlite_file):
     c.execute("CREATE INDEX IF NOT EXISTS mrna_entity_index ON entity_table (mrna_index)")
     c.execute("CREATE INDEX IF NOT EXISTS prot_entity_index ON entity_table (prot_index)")
 
-    for acc_table, _ in GENE_COLS + ISOFORM_COLS + PROTEOFORM_COLS:
+    for acc_table in GENE_COLS + ISOFORM_COLS + PROTEOFORM_COLS:
         c.execute(f"CREATE INDEX IF NOT EXISTS {acc_table}_entity_index ON {acc_table} (entity_index)")
         print(acc_table)
 

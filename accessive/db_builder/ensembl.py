@@ -7,6 +7,18 @@ import io
 
 from ..data_structure import *
 
+
+# All of these are [(name_in_accesive, name_in_ensembl_json)]
+ENSEMBL_GENE_COLS = [('ensembl_gene', 'id'), ('gene_description', 'description'), ('gene_name', 'name'), ('arrayexpress', 'ArrayExpress'), ('biogrid', 'BioGRID'), 
+                     ('ens_lrg_gene', 'ENS_LRG_gene'), ('entrez_gene', 'EntrezGene'), ('genecards', 'GeneCards'), ('hgnc', 'HGNC'), 
+                     ('mim_gene', 'MIM_GENE'), ('pfam', 'Pfam'), ('uniprot_gene', 'Uniprot_gn'), ('wikigene', 'WikiGene')]
+ENSEMBL_ISOFORM_COLS = [('ensembl_mrna', 'id'), ('ccds', 'CCDS'), ('ens_lrg_transcript', 'ENS_LRG_transcript'), ('refseq_mrna', 'RefSeq_mRNA'), ('refseq_ncrna', 'RefSeq_ncRNA'),
+                        ('ucsc', 'UCSC'), ('isoform_biotype', 'biotype'), ('nextprot_isoform', 'NextProt_isoform')]
+ENSEMBL_PROTEOFORM_COLS = [('ensembl_prot', 'id'), ('uniparc', 'UniParc'), ('alphafold', 'alphafold'), ('uniprot_swissprot', 'Uniprot/SWISSPROT'), ('uniprot_trembl', 'Uniprot/SPTREMBL'),
+                           ('uniprot_isoform', 'Uniprot_isoform'), ('refseq_peptide', 'RefSeq_peptide'), ('embl', 'EMBL'), ('pdb', 'PDB')]
+
+
+
 def download_ensembl_data(include_list=None, already_loaded = [], data_save_dir = None):
     if include_list is not None:
         include_list = [x[1] for x in include_list] # Only the scientific name strings, which match Ensembl's directory names
@@ -55,6 +67,18 @@ def download_ensembl_data(include_list=None, already_loaded = [], data_save_dir 
             ftp.cwd('..')
 
 
+
+def _list_item(data, key):
+    try:
+        thing = data[key]
+    except KeyError:
+        return []
+    if isinstance(thing, list):
+        return thing
+    else:
+        assert(isinstance(thing, str))
+        return [thing]
+
 def load_ensembl_jsonfile(json_file, sqlite_file):
     if isinstance(json_file, str):
         try:
@@ -85,8 +109,8 @@ def load_ensembl_jsonfile(json_file, sqlite_file):
         if gene['id'][:3] == 'LRG':
             continue
 
-        for db_name, json_name in GENE_COLS:
-            for item in list_item(gene, json_name):
+        for db_name, json_name in ENSEMBL_GENE_COLS:
+            for item in _list_item(gene, json_name):
                 c.execute(f"INSERT INTO {db_name} (entity_index, identifier, taxon, is_canonical) VALUES (?, ?, ?, ?)", (gene_index, item, taxon, 1))
                 c.execute(f"INSERT INTO identifier_directory (identifier, identifier_type) VALUES (?, ?)", (item, db_name))
 
@@ -96,8 +120,8 @@ def load_ensembl_jsonfile(json_file, sqlite_file):
             isoform_index = next_index
             next_index += 1
 
-            for db_name, json_name in ISOFORM_COLS:
-                for item in list_item(isoform, json_name):
+            for db_name, json_name in ENSEMBL_ISOFORM_COLS:
+                for item in _list_item(isoform, json_name):
                     c.execute(f"INSERT INTO {db_name} (entity_index, identifier, taxon, is_canonical) VALUES (?, ?, ?, ?)", (isoform_index, item, taxon, 1))
                     c.execute(f"INSERT INTO identifier_directory (identifier, identifier_type) VALUES (?, ?)", (item, db_name))
            
@@ -107,8 +131,8 @@ def load_ensembl_jsonfile(json_file, sqlite_file):
                 proteoform_index = next_index
                 next_index += 1
 
-                for db_name, json_name in PROTEOFORM_COLS:
-                    for item in list_item(proteoform, json_name):
+                for db_name, json_name in ENSEMBL_PROTEOFORM_COLS:
+                    for item in _list_item(proteoform, json_name):
                         c.execute(f"INSERT INTO {db_name} (entity_index, identifier, taxon, is_canonical) VALUES (?, ?, ?, ?)", (proteoform_index, item, taxon, 1))
                         c.execute(f"INSERT INTO identifier_directory (identifier, identifier_type) VALUES (?, ?)", (item, db_name))
                 

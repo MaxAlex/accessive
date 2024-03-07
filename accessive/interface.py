@@ -5,8 +5,22 @@ import pandas as pd
 from .data_structure import *
 from .database_ops import DATABASE_FILE
 
+
+GENE_COLS = ['ensembl_gene', 'gene_description', 'gene_name', 'arrayexpress', 'biogrid', 'ens_lrg_gene', 'entrez_gene', 
+             'genecards', 'hgnc', 'mim_gene', 'pfam', 'uniprot_gene', 'wikigene', 'nextprot']
+ISOFORM_COLS = ['ensembl_mrna', 'ccds', 'ens_lrg_transcript', 'refseq_mrna', 'refseq_ncrna', 'ucsc', 'isoform_biotype', 'nextprot_isoform']
+PROTEOFORM_COLS = ['ensembl_prot', 'uniparc', 'alphafold', 'uniprot_swissprot', 'uniprot_trembl', 'uniprot_isoform', 'refseq_peptide', 'embl', 'pdb']
+
+
+KNOWN_IDENTIFIERS = set(GENE_COLS + ISOFORM_COLS + PROTEOFORM_COLS)
+
 class Accessive():
-    def __init__(self, sqlite_file = None):
+    def __init__(self, sqlite_file = None, 
+                 default_from_type = None,
+                 default_to_types = None,
+                 default_format = 'pandas', 
+                 default_taxon = None, 
+                 default_require_canonical = False):
         if sqlite_file is None:
             if not os.path.exists(DATABASE_FILE):
                 raise RuntimeError(f"Database file not found in default location: {DATABASE_FILE} . Download the database or specify a different file.")
@@ -23,19 +37,35 @@ class Accessive():
             print("WARNING: Database version not found. This may be an old version of the database that does not include version information.")
             print("You can download the correct database version by running the command 'python -m accessive.database_ops --download'")
 
+        self.default_from_type = default_from_type
+        self.default_to_types = default_to_types
+        self.default_format = default_format
+        self.default_taxon = default_taxon
+        self.default_require_canonical = default_require_canonical
+
+        assert(self.default_from_type is None or self.default_from_type in TO_DATABASE_NAME), f"default_from_type {self.default_from_type} is not recognized."
+        assert(self.default_to_types is None or all(x in TO_DATABASE_NAME for x in self.default_to_types)), f"Some default to_types are not recognized: {[x for x in self.default_to_types if x not in TO_DATABASE_NAME]}"
+        assert(self.default_format in ['pandas', 'json', 'txt']), "default_format must be one of 'pandas', 'json', or 'txt'."
+        assert(self.default_taxon is None or isinstance(self.default_taxon, int)), "default_taxon must be an integer."
+        assert(isinstance(self.default_require_canonical, bool)), "default_require_canonical must be a boolean."
+
+
 
     def _get_db_version(self):
         self.c.execute("SELECT val FROM accessive_meta WHERE key = 'database_version'")
         return self.c.fetchone()[0]
 
 
-    def _get_identifier_type(self, acc):
+    def _get_identifier_type(self, acc, allow_multiple = False):
         self.c.execute("SELECT identifier_type FROM identifier_directory WHERE identifier = ?", (acc,))
-        types = [x[0] for x in self.c.fetchall()]
-        if len(set(types)) > 1:
-            raise Exception(f"Identifier {acc} is associated with multiple types: {', '.join(types)}")
+        types = list(set([x[0] for x in self.c.fetchall()]))
+        if not allow_multiple:
+            if len(types) > 1:
+                raise Exception(f"Identifier {acc} is associated with multiple types: {', '.join(types)}")
+            else:
+                return types[0]
         else:
-            return types[0]
+            return types
 
 
     def _get_type_metadata(self, idtypes):
@@ -49,6 +79,19 @@ class Accessive():
         """
         self.c.execute("SELECT name, common_name FROM species_table WHERE taxon = ?", (taxon,))
         return self.c.fetchone()
+
+    
+    def identify(self, acc):
+        """
+        Identifies the type(s) of an accession identifier.
+
+        Parameters:
+        - acc (str): The accession identifier to be identified.
+
+        Returns:
+        A list of strings representing the type(s) of the identifier, if any.
+        """
+        return self._get_identifier_type(acc)
 
 
     def available_taxons(self):
@@ -111,11 +154,11 @@ class Accessive():
         return result_table[column_names[4:]]
 
 
-    def map(self, ids, from_type = None, to_types = None, taxon = None, require_canonical = False,
+    def map(self, ids, from_type = None, to_types = None, taxon = None, require_canonical = None,
+            format=None,
             return_query_info = False, 
-            return_format=None,
             extensive = False, 
-            pretty_names = True):
+            ):
         """
         Converts a set of biological identifiers from one type to another.
 
@@ -128,7 +171,6 @@ class Accessive():
         - return_query_info (bool, optional): Return additional inforamtion about the query.
         - return_format (str, optional): The format of the returned data ('txt', 'json', 'pandas'). If not specified, returns a Pandas DataFrame.
         - extensive (bool, optional): Returns all relevant identifiers for the named genes/transcripts/proteins, including additional mappings back to the source accession type.
-        - pretty_names (bool, optional): Renames the columns to more user-friendly names. Defaults to True.
 
         Returns:
         A table (in pandas Dataframe, JSON, or text TSV format) containing the requested identifiers.
@@ -148,34 +190,36 @@ class Accessive():
         if isinstance(to_types, str):
             to_types = [to_types]
         assert(to_types is None or isinstance(to_types, list))
-        if not from_type:
-            from_type = self._get_identifier_type(ids[0])
 
-        # if to_types is None:
-        #     _, fromtype_entity = self._get_type_metadata([from_type])
-        #     if fromtype_entity == 'gene':
-        #         to_types = [x for x, _ in GENE_COLS]
-        #     elif fromtype_entity == 'mrna':
-        #         to_types = [x for x, _ in ISOFORM_COLS]
-        #     elif fromtype_entity == 'prot':
-        #         to_types = [x for x, _ in PROTEOFORM_COLS]
-        #     else:
-        #         raise Exception("Someone messed up the database and added an entity type: " + fromtype_entity)
         if to_types is None:
-            to_types = [x[0] for x in GENE_COLS]
+            if self.default_to_types is not None:
+                to_types = self.default_to_types
+            else:
+                to_types = [x for x in GENE_COLS]
+
+        if not from_type:
+            if self.default_from_type is not None:
+                from_type = self.default_from_type
+            else:
+                ## Automatic from_type inference is disabled for now; I have mixed feelings about making it easy
+                ## to introduce effectively-nondeterministic behavior into a scientific workflows.
+                # from_type = self._get_identifier_type(ids[0])
+                raise ValueError("Missing from_type")
 
         if len(to_types) < len(set(to_types)):
             to_types = list(set(to_types))
 
-        try:
-            from_type = TO_DATABASE_NAME[from_type]
-        except KeyError:
-            raise Exception(f"Source identifier type {from_type} is not recognized.")
+        if taxon is None:
+            taxon = self.default_taxon
 
-        try:
-            to_types = [TO_DATABASE_NAME[x] for x in to_types]
-        except KeyError:
-            raise Exception(f"Destination identifier type {[x for x in to_types if x not in TO_DATABASE_NAME]} is not recognized.")
+        if require_canonical is None:
+            require_canonical = self.default_require_canonical
+
+        if from_type not in KNOWN_IDENTIFIERS:
+            raise ValueError(f"Source identifier type {from_type} is not recognized.")
+        if not all(x in KNOWN_IDENTIFIERS for x in to_types):
+            raise ValueError(f"Some destination identifier types are not recognized: {[x for x in to_types if x not in KNOWN_IDENTIFIERS]}")
+
 
         result = self._query(ids, from_type, to_types, taxon, require_canonical)
 
@@ -185,19 +229,30 @@ class Accessive():
         if not extensive:
             result = result[result[from_type].isin(ids)]
 
-        if pretty_names:
-            result.rename(columns=TO_PRETTIER_NAME, inplace=True)
-    
-        if return_format == 'txt':
+        result = result.set_index(from_type, drop=(from_type not in to_types)) 
+        
+        # Lots of queries will return all-None rows, for various complicated reasons, usually of the form 
+        # "rows correspond to proteoforms since a proteoform accession was requested, but some genes/transcripts
+        # in the result are non-coding or missing" 
+        result = result[~result.isnull().all(axis=1)]
+
+        if format == 'txt':
             result = result.applymap(lambda x: x if isinstance(x, str) else ','.join(x))
             result = result.to_csv(index=False, sep='\t') 
-        elif return_format == 'json':
-            result = result.to_json(orient='records')
-        elif return_format == 'pandas' or return_format == None:
-            result = result.set_index(from_type, drop=(from_type not in to_types)) 
+        elif format == 'json' or format == 'dict':
+            # result = result.to_dict(orient='dict')
+            ## None of the pandas to_dict options do quite what we want here.
+            d_lookup = {ftype:{ttype:[] for ttype in result.columns} for ftype in set(result.index)}
+            for acc, row in result.iterrows():
+                for acctype in result.columns:
+                    if row[acctype] is not None:
+                        d_lookup[acc][acctype].append(row[acctype])
+            result = d_lookup
+        elif format == 'pandas' or format == None:
+            pass
         else:
-            raise Exception(f"Return format {return_format} is not recognized.")
-
+            raise Exception(f"Return format {format} is not recognized.")
+        
         if return_query_info:
             return {'result': result, 'from_type': from_type, 'to_types': to_types, 'taxon': taxon}
         else:
@@ -224,45 +279,7 @@ class Accessive():
         Convert a single Ensembl Gene ID to UniProt and RefSeq peptide identifiers:
         >>> accessive.get(accession='ENSG00000139618', from_type='ensembl_gene', to_type='uniprot_swissprot')
         """
-        return self.map(ids=accession, from_type=from_type, to_types=[to_type], taxon=taxon, return_format='pandas')[to_type].tolist()
-
-
-    def make_lookup(self, from_type, to_type, taxon = None):
-        """
-        Creates a lookup table for converting identifiers from one type to another. Useful for scripts that require
-        many repeated lookups of one accession at at time.
-
-        Parameters:
-        - from_type (str): The type of the input identifiers.
-        - to_type (str): The target identifier type to convert to.
-        - taxon (str, optional): The taxonomic species identifier; this is recommended to limit the size of the lookup table
-
-        Returns:
-            A dictionary mapping from_type accessions to to_type accessions
-
-        """
-        from_type = TO_DATABASE_NAME[from_type]
-        to_type = TO_DATABASE_NAME[to_type]
-
-        levels = self._get_type_metadata([from_type, to_type])
-
-        if taxon is None:
-            taxon_line = ''
-        else:
-            taxon_line = f"WHERE {from_type}.taxon = {taxon}"
-
-        self.c.execute(f"""SELECT {from_type}.identifier, {to_type}.identifier 
-                           FROM {from_type}
-                           JOIN entity_table ON {from_type}.entity_index = entity_table.{levels[from_type]}_index
-                           JOIN {to_type} ON entity_table.{levels[to_type]}_index = {to_type}.entity_index
-                           {taxon_line}
-                       """)
-        lookup = dict(self.c.fetchall())
-        return lookup
-
-
-
-
+        return self.map(ids=accession, from_type=from_type, to_types=[to_type], taxon=taxon, format='pandas')[to_type].tolist() # type: ignore
 
 
 
