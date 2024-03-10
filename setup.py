@@ -1,11 +1,11 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="Accessive",
+    name="accessive",
     version="0.1.0",
     author="William Max Alexander",
     author_email="accessive@alexander.bio",
-    description="A Python library for converting between different bioinformatic accession types",
+    description="Library for converting between various bioinformatic accession types for genes, transcripts and proteins.",
     long_description=open('README.md').read(),
     long_description_content_type="text/markdown",
     url="https://github.com/maxalex/accessive",
