@@ -238,7 +238,7 @@ class Accessive():
 
         if format == 'txt':
             result = result.applymap(lambda x: x if isinstance(x, str) else ','.join(x))
-            result = result.to_csv(index=False, sep='\t') 
+            result = result.to_csv(sep='\t') 
         elif format == 'json' or format == 'dict':
             # result = result.to_dict(orient='dict')
             ## None of the pandas to_dict options do quite what we want here.
