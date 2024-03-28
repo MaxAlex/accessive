@@ -28,7 +28,7 @@ def download_database(force = False):
     req.raise_for_status()
     with open(DATABASE_FILE, 'wb') as out:
         with gzip.open(req.raw, 'rb') as decomp:
-            out.write(decomp.read())
+            out.write(decomp.read()) # type: ignore
 
     print("Database download complete.")
 

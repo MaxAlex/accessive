@@ -223,7 +223,11 @@ class Accessive():
 
         result = self._query(ids, from_type, to_types, taxon, require_canonical)
 
-        dedup_ind = result.applymap(lambda x: x if not isinstance(x, list) else ','.join(x)).drop_duplicates().index
+        try:
+            dedup_ind = result.map(lambda x: x if not isinstance(x, list) else ','.join(x)).drop_duplicates().index
+        except AttributeError:
+            # Pandas went from not having .map() at all to having an annoying deprecation message on .applymap(), in one version! 
+            dedup_ind = result.applymap(lambda x: x if not isinstance(x, list) else ','.join(x)).drop_duplicates().index
         result = result.loc[dedup_ind]
 
         if not extensive:
@@ -237,7 +241,7 @@ class Accessive():
         result = result[~result.isnull().all(axis=1)]
 
         if format == 'txt':
-            result = result.applymap(lambda x: x if isinstance(x, str) else ','.join(x))
+            result = result.applymap(lambda x: ', '.join(x) if isinstance(x, list) else x)
             result = result.to_csv(sep='\t') 
         elif format == 'json' or format == 'dict':
             # result = result.to_dict(orient='dict')
