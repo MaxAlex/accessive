@@ -6,29 +6,20 @@ Usage
 Installation
 ------------
 
-To use Lumache, first install it using pip:
+To use Accessive, first install it using pip:
 
 .. code-block:: console
 
-   (.venv) $ pip install lumache
+   $ pip install accessive 
 
-Creating recipes
+Installing the database
 ----------------
 
-To retrieve a list of random ingredients,
-you can use the ``lumache.get_random_ingredients()`` function:
+Accessive uses a local SQLite database to store accession mapping information. To install the database, run:
 
-.. autofunction:: lumache.get_random_ingredients
+.. code-block:: console
+   $ python -m accessive.database_ops --download
 
-The ``kind`` parameter should be either ``"meat"``, ``"fish"``,
-or ``"veggies"``. Otherwise, :py:func:`lumache.get_random_ingredients`
-will raise an exception.
-
-.. autoexception:: lumache.InvalidKindError
-
-For example:
-
->>> import lumache
->>> lumache.get_random_ingredients()
-['shells', 'gorgonzola', 'parsley']
+The database will download automatically and immediately be usable by Accessive. Note that the Accessive database 
+is about 500MB in size, make sure you have sufficient disk space beforehand.
 
