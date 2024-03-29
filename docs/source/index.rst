@@ -15,7 +15,8 @@ mapping information from `Ensembl <https://ensembl.org>`_, `Uniprot <https://uni
 
 .. note::
 
-   This project is under active development.
+   This project is under active development. If you have any questions, comments, or suggestions,
+   email me at `max@alexander.bio <mailto:max@alexander.bio>`_.
 
 Contents
 --------

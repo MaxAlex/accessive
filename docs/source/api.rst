@@ -59,8 +59,8 @@ The ``map`` method allows for the conversion of a set of biological identifiers 
 Parameters:
 
 - ``ids``: A list of identifiers to be converted.
-- ``from_type``: The type of the input identifiers.
-- ``to_types``: A list of types to convert the identifiers to.
+- ``from_type``: The type of the input identifiers. See :ref:`the usage page <accessions>` for a list of supported types.
+- ``to_types``: A list of types to convert the identifiers to. :ref:`the usage page <accessions>` for a list of supported types.
 - ``taxon``: The taxonomic species identifier (optional).
 
 The method returns a table or dict structure containing the requested identifiers.
